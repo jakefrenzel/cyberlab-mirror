@@ -108,3 +108,23 @@ CI ([`ci.yml`](.github/workflows/ci.yml)) runs these steps on every push and pul
 - a Trivy scan that fails on fixable HIGH or CRITICAL vulnerabilities
 
 Actions and base images are pinned to SHAs and digests, and Dependabot proposes updates weekly.
+
+## Releases
+
+Pushing a version tag (`git tag v0.1.0 && git push origin v0.1.0`) runs [`release.yml`](.github/workflows/release.yml):
+
+1. **Build and gate:** the image is built and scanned with Trivy. Nothing is pushed if it has a fixable HIGH or CRITICAL vulnerability.
+2. **Publish:** the image goes to `ghcr.io/jakefrenzel/cyberlab-mirror-api`, with SLSA build provenance and an SPDX SBOM.
+3. **Sign:** cosign signs the image and attests the SBOM, by digest, keylessly. The certificate names this repository's `release.yml` at the tag, and the signature is recorded in Sigstore's transparency log.
+4. **Verify:** both are checked the way the cluster will check them.
+5. **Deploy PR:** a pull request in [cyberlab-infra](https://github.com/jakefrenzel/cyberlab-infra) changes the image's tag and digest in `k8s/cyberlab-mirror/kustomization.yaml`. Merging it deploys: Argo CD syncs `main`.
+
+The deploy PR uses a fine-grained token that can only write to cyberlab-infra. It's stored in the `infra-bump` environment, which only releases it to jobs running from a `v*` tag. Everything else in this repository runs with a read-only token.
+
+Verify a release yourself:
+
+```bash
+cosign verify ghcr.io/jakefrenzel/cyberlab-mirror-api@sha256:<digest> \
+  --certificate-identity https://github.com/jakefrenzel/cyberlab-mirror/.github/workflows/release.yml@refs/tags/v<version> \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```

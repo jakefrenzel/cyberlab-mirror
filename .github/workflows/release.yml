@@ -1,0 +1,207 @@
+# Publish a release: build, scan, push to GHCR, then sign each image and its SBOM with
+# cosign. Runs only for version tags (git tag v0.1.0 && git push origin v0.1.0). One
+# tag releases every image in the repository at that version; for now that's the API,
+# and the web front end joins it.
+#
+# Signing is keyless: GitHub issues this workflow run an OIDC token, Sigstore's CA
+# exchanges it for a short-lived certificate naming this repository and workflow, and
+# the signature is recorded in Sigstore's public transparency log (Rekor). There is no
+# signing key to store or leak; "signed by release.yml in jakefrenzel/cyberlab-mirror"
+# is what the cluster will verify.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  api:
+    name: API build / scan / push / sign
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+      id-token: write # OIDC token for keyless signing
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}-api
+    outputs:
+      version: ${{ steps.tags.outputs.version }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tags
+        id: tags
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "list<<EOF"
+            echo "$IMAGE:$version"
+            echo "$IMAGE:sha-${GITHUB_SHA::7}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Build into the local Docker engine first: nothing is pushed until the scan passes
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: api
+          load: true
+          tags: cyberlab-mirror-api:release
+          build-args: VERSION=${{ steps.tags.outputs.version }}
+
+      - name: Trivy gate
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --no-progress --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+            cyberlab-mirror-api:release
+
+      # SPDX software bill of materials: every package in the image, Go modules included
+      - name: SBOM
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/out" \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --no-progress --format spdx-json --output /out/sbom.spdx.json \
+            cyberlab-mirror-api:release
+          jq -r '"SBOM: \(.packages | length) packages"' sbom.spdx.json
+
+      # The token goes in through stdin, never on the command line
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      # Same build again (from cache), pushed, with SLSA build provenance attached
+      - name: Push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: api
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: VERSION=${{ steps.tags.outputs.version }}
+          provenance: mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.tags.outputs.version }}
+            org.opencontainers.image.description=cyberlab-mirror API: GitHub mirror behind atlasopsec/auth
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      # Sign the digest, not a tag: tags can be moved, digests can't
+      - name: Sign image and attest SBOM
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes "$IMAGE@$DIGEST"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$IMAGE@$DIGEST"
+
+      # Prove it: verify both exactly the way the cluster will
+      - name: Verify
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          cosign verify "$IMAGE@$DIGEST" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          cosign verify-attestation "$IMAGE@$DIGEST" --type spdxjson \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          {
+            echo "### Published"
+            echo
+            echo '```'
+            echo "$IMAGE:${{ steps.tags.outputs.version }}@$DIGEST"
+            echo '```'
+            echo
+            echo "Signature and SBOM attestation verified for \`$IDENTITY\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Open a pull request in cyberlab-infra that deploys this release. Merging it is the
+  # deploy: Argo CD syncs main. Runs only after every image is signed and verified.
+  bump-infra:
+    name: Open deploy PR in cyberlab-infra
+    runs-on: ubuntu-24.04
+    needs: api
+    # The token is an environment secret: the infra-bump environment only hands it to
+    # jobs running from a v* tag. It's a fine-grained token limited to cyberlab-infra
+    # (contents + pull requests); this repository's own token stays read-only.
+    environment: infra-bump
+    permissions: {}
+    steps:
+      - name: Check inputs
+        env:
+          VERSION: ${{ needs.api.outputs.version }}
+          DIGEST: ${{ needs.api.outputs.digest }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: $VERSION"; exit 1; }
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad digest: $DIGEST"; exit 1; }
+
+      - name: Commit the new tag and digest, open a PR
+        env:
+          GH_TOKEN: ${{ secrets.INFRA_PR_TOKEN }}
+          VERSION: ${{ needs.api.outputs.version }}
+          DIGEST: ${{ needs.api.outputs.digest }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          file=k8s/cyberlab-mirror/kustomization.yaml
+          image=ghcr.io/jakefrenzel/cyberlab-mirror-api
+          branch="deploy/cyberlab-mirror-v$VERSION"
+
+          gh repo clone jakefrenzel/cyberlab-infra infra -- --depth 1
+          cd infra
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+
+          # Only this image's entry: the file lists one per image (name, newTag, digest)
+          sed -i -E "\|^  - name: $image\$|,\|^    digest:| {
+            s|^(    newTag: ).*|\1\"$VERSION\"|
+            s|^(    digest: ).*|\1$DIGEST|
+          }" "$file"
+          if ! grep -A2 -x "  - name: $image" "$file" | grep -q "newTag: \"$VERSION\"" \
+            || ! grep -A2 -x "  - name: $image" "$file" | grep -q "digest: $DIGEST"; then
+            echo "kustomization.yaml didn't take the new values for $image"; cat "$file"; exit 1
+          fi
+          if git diff --quiet; then
+            echo "cyberlab-infra already runs $VERSION@$DIGEST"
+            exit 0
+          fi
+
+          git commit -am "Deploy cyberlab-mirror v$VERSION"
+          # gh's credential helper supplies the token for the push
+          gh auth setup-git
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Deploy cyberlab-mirror v$VERSION" \
+            --body "$(printf '%s\n' \
+              "Deploys [cyberlab-mirror v$VERSION](https://github.com/jakefrenzel/cyberlab-mirror/releases/tag/v$VERSION)." \
+              "" \
+              '```' "$image:$VERSION@$DIGEST" '```' \
+              "" \
+              "Built, scanned, signed, and verified by [this release run]($RUN_URL). Merging deploys it: Argo CD syncs \`main\`." \
+              "" \
+              "Verify the signature yourself:" \
+              '```bash' \
+              "cosign verify $image@$DIGEST \\" \
+              "  --certificate-identity https://github.com/jakefrenzel/cyberlab-mirror/.github/workflows/release.yml@refs/tags/v$VERSION \\" \
+              "  --certificate-oidc-issuer https://token.actions.githubusercontent.com" \
+              '```')"
