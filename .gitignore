@@ -1,0 +1,13 @@
+# Build output
+/api/api
+/api/api.exe
+*.test
+*.out
+
+# Editors
+.vscode/
+.idea/
+
+# Local settings and anything secret
+.env
+.env.*
