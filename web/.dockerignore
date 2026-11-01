@@ -1,0 +1,7 @@
+# Build output and dependencies are made inside the build; local settings stay local
+node_modules
+.next
+.env*
+!.env.example
+*.log
+coverage

@@ -2,7 +2,7 @@
 
 A private mirror of my GitHub repositories, running in my [homelab cluster](https://github.com/jakefrenzel/cyberlab-infra). It keeps a copy of every repository I own, so losing access to GitHub doesn't mean losing the code. A read-only web UI lets me browse the copies, behind a sign-in from my own auth module, [`atlasopsec/auth`](https://github.com/atlasopsec/auth).
 
-> **Status:** the API (`api/`) is built and tested. The web front end (`web/`, Next.js) is next, then the deployment.
+> **Status:** the API (`api/`) and the web front end ([`web/`](web/README.md), Next.js) are built, tested, and released as signed images. Deploying them to the cluster is next.
 
 ## How it fits together
 
@@ -91,6 +91,8 @@ Plus the module's own endpoints (`/v1/users`, `/v1/sessions`, `/v1/email-verific
 
 ## Development
 
+The web front end has its own checks and notes in [`web/README.md`](web/README.md). The API:
+
 ```bash
 cd api
 go test -short ./...   # unit tests
@@ -105,7 +107,8 @@ CI ([`ci.yml`](.github/workflows/ci.yml)) runs these steps on every push and pul
 - `go mod verify`, `go vet`, and the tests with `-race`
 - golangci-lint (with gosec), govulncheck, and gitleaks
 - a Docker build, then a smoke test of the image against a real PostgreSQL
-- a Trivy scan that fails on fixable HIGH or CRITICAL vulnerabilities
+- for the web front end: ESLint, TypeScript, Prettier, Vitest, `pnpm audit`, and a smoke test that checks every script on the auth pages carries the response's CSP nonce
+- a Trivy scan of each image that fails on fixable HIGH or CRITICAL vulnerabilities
 
 Actions and base images are pinned to SHAs and digests, and Dependabot proposes updates weekly.
 
@@ -113,11 +116,13 @@ Actions and base images are pinned to SHAs and digests, and Dependabot proposes 
 
 Pushing a version tag (`git tag v0.1.0 && git push origin v0.1.0`) runs [`release.yml`](.github/workflows/release.yml):
 
-1. **Build and gate:** the image is built and scanned with Trivy. Nothing is pushed if it has a fixable HIGH or CRITICAL vulnerability.
-2. **Publish:** the image goes to `ghcr.io/jakefrenzel/cyberlab-mirror-api`, with SLSA build provenance and an SPDX SBOM.
-3. **Sign:** cosign signs the image and attests the SBOM, by digest, keylessly. The certificate names this repository's `release.yml` at the tag, and the signature is recorded in Sigstore's transparency log.
+One tag releases both images, the API and the web front end, in parallel:
+
+1. **Build and gate:** each image is built and scanned with Trivy. Nothing is pushed if either has a fixable HIGH or CRITICAL vulnerability.
+2. **Publish:** the images go to `ghcr.io/jakefrenzel/cyberlab-mirror-api` and `ghcr.io/jakefrenzel/cyberlab-mirror-web`, with SLSA build provenance and SPDX SBOMs.
+3. **Sign:** cosign signs each image and attests its SBOM, by digest, keylessly. The certificate names this repository's `release.yml` at the tag, and the signature is recorded in Sigstore's transparency log.
 4. **Verify:** both are checked the way the cluster will check them.
-5. **Deploy PR:** a pull request in [cyberlab-infra](https://github.com/jakefrenzel/cyberlab-infra) changes the image's tag and digest in `k8s/cyberlab-mirror/kustomization.yaml`. Merging it deploys: Argo CD syncs `main`.
+5. **Deploy PR:** one pull request in [cyberlab-infra](https://github.com/jakefrenzel/cyberlab-infra) changes both images' tags and digests in `k8s/cyberlab-mirror/kustomization.yaml`. Merging it deploys: Argo CD syncs `main`.
 
 The deploy PR uses a fine-grained token that can only write to cyberlab-infra. It's stored in the `infra-bump` environment, which only releases it to jobs running from a `v*` tag. Everything else in this repository runs with a read-only token.
 

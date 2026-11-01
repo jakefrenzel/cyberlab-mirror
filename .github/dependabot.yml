@@ -22,3 +22,18 @@ updates:
     directory: /api
     schedule:
       interval: weekly
+
+  # The web front end's npm packages (pnpm-lock.yaml) and its base images. Dev tools
+  # are grouped; Next.js and React updates come on their own, to review separately.
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      dev-tools:
+        dependency-type: development
+
+  - package-ecosystem: docker
+    directory: /web
+    schedule:
+      interval: weekly
