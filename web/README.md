@@ -8,14 +8,14 @@ It starts from the auth module's Next.js template (`templates/nextjs`, **version
 
 The design is the dark, tonal redesign (`app/globals.css` holds its colour tokens; Figtree and IBM Plex Mono come from `next/font`, so they're served from this app). One breakpoint, at 760px, switches to the phone layout.
 
-| Path                                     | What it shows                                                                                                                                                                                      |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/repos?filter=`                         | Sync health (a count, a bar, and a legend that filters by state), the schedule with **Sync now**, and every repository: failed and gone ones first, each failed one with its error and **Retry** |
-| `/repos/{name}?ref=&path=`               | A folder, with a file tree beside it (a drawer on phones). A picker switches between branches and tags                                                                                           |
-| `/repos/{name}/blob?ref=&path=#L12`      | A file's text with syntax highlighting and line numbers; a line number selects that line and puts it in the URL. Binary and large files say why they aren't shown; a symlink isn't followed      |
-| `/repos/{name}/commits?ref=&path=`       | History grouped by day, 30 commits at a time, optionally for one file. Each commit's hash opens the files at that commit                                                                         |
-| `/account`                               | Email, password, two-factor authentication, sign-in providers, and sessions                                                                                                                       |
-| `/login`, `/sign-up`, …                  | The template's auth pages, restyled as one card                                                                                                                                                  |
+| Path                                | What it shows                                                                                                                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/repos?filter=`                    | Sync health (a count, a bar, and a legend that filters by state), the schedule with **Sync now**, and every repository: failed and gone ones first, each failed one with its error and **Retry** |
+| `/repos/{name}?ref=&path=`          | A folder, with a file tree beside it (a drawer on phones). A picker switches between branches and tags                                                                                           |
+| `/repos/{name}/blob?ref=&path=#L12` | A file's text with syntax highlighting and line numbers; a line number selects that line and puts it in the URL. Binary and large files say why they aren't shown; a symlink isn't followed      |
+| `/repos/{name}/commits?ref=&path=`  | History grouped by day, 30 commits at a time, optionally for one file. Each commit's hash opens the files at that commit                                                                         |
+| `/account`                          | Email, password, two-factor authentication, sign-in providers, and sessions                                                                                                                      |
+| `/login`, `/sign-up`, …             | The template's auth pages, restyled as one card                                                                                                                                                  |
 
 **⌘K** (or Ctrl+K, or the search pill) opens a palette that jumps to a repository, or to a file in the repository that's open.
 
