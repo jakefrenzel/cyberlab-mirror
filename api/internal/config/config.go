@@ -51,6 +51,9 @@ type Config struct {
 	// MaxFileSize is the largest file whose content the API returns
 	// (MAX_FILE_SIZE bytes, default 1 MiB).
 	MaxFileSize int64
+	// SyncConcurrency is how many repositories sync at once
+	// (SYNC_CONCURRENCY, 1 to 8, default 2). Each costs memory while it runs.
+	SyncConcurrency int
 }
 
 // FromEnv reads the configuration through getenv (os.Getenv in production).
@@ -132,6 +135,15 @@ func FromEnv(getenv func(string) string) (Config, error) {
 			errs = append(errs, errors.New("MAX_FILE_SIZE must be between 1024 and 16777216 bytes"))
 		}
 		c.MaxFileSize = n
+	}
+
+	c.SyncConcurrency = 2
+	if v := get("SYNC_CONCURRENCY", ""); v != "" {
+		var n int
+		if _, err := fmt.Sscan(v, &n); err != nil || n < 1 || n > 8 {
+			errs = append(errs, errors.New("SYNC_CONCURRENCY must be from 1 to 8"))
+		}
+		c.SyncConcurrency = n
 	}
 
 	if len(errs) > 0 {

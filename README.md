@@ -25,6 +25,8 @@ The browser never talks to the API. The web app holds the session in an `__Host-
 - **Never deletes:** a repository that disappears from GitHub (or from the token's view) is kept and marked `gone`.
 - **Token:** sent only to `api.github.com` and `github.com` over HTTPS, never stored in a copy's git config, and scrubbed from any error message. The GitHub client refuses redirects and pagination links to other hosts.
 
+**Memory:** go-git holds each whole object in memory while it indexes a fetch, so a sync needs roughly the size of the largest file in a repository's history, uncompressed, however small the repository's pack is. My largest repository is a 12.5 MB pack with 25 MB files, and it needs about 300 to 400 MiB to fetch. The API caps go-git's object cache at 16 MiB per syncing repository (8 MiB per browsing request), down from go-git's default of 96 MiB, and logs `mirror: syncing` before each fetch, so an out-of-memory kill names its repository. Give the container room accordingly; it runs with a 1 GiB limit.
+
 Mirroring uses [go-git](https://github.com/go-git/go-git), a pure-Go git implementation, so the image needs no `git` binary, shell, or OS packages. go-git has had a steady stream of advisories. Most involve worktrees, SSH, or hostile servers, and this design avoids all three: copies are bare, the only transport is HTTPS, and the only server is GitHub. `govulncheck` and Dependabot watch for new ones.
 
 ## Sign-in and the allowlist
@@ -72,6 +74,7 @@ Plus the module's own endpoints (`/v1/users`, `/v1/sessions`, `/v1/email-verific
 | `TRUSTED_PROXIES` | loopback | CIDRs allowed to forward the client's IP: the web app's pods |
 | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | off | Turn on "Sign in with GitHub" (both or neither) |
 | `SYNC_INTERVAL` | `6h` | At least `5m` |
+| `SYNC_CONCURRENCY` | `2` | Repositories synced at once (1 to 8). Each costs memory while it runs |
 | `DATA_DIR` | `/data/repos` | Where the copies live |
 | `LISTEN_ADDR`, `OPS_ADDR` | `:8080`, `:9090` | |
 | `MAX_FILE_SIZE` | `1048576` | Largest file whose content is returned |

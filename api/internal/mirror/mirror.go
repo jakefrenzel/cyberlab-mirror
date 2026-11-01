@@ -32,6 +32,7 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 
 	"github.com/jakefrenzel/cyberlab-mirror/api/internal/github"
+	"github.com/jakefrenzel/cyberlab-mirror/api/internal/gitstore"
 )
 
 // State is where a repository's copy stands.
@@ -104,8 +105,11 @@ type Options struct {
 	Token string
 	// Interval is the time between syncs. Default: 6 hours.
 	Interval time.Duration
-	// Concurrency is how many repositories sync at once. Default: 4.
+	// Concurrency is how many repositories sync at once. Default: 2.
 	Concurrency int
+	// CacheSize bounds each syncing repository's object cache, in bytes.
+	// Default: 16 MiB (go-git's own default is 96 MiB).
+	CacheSize int64
 	// RepoTimeout bounds one repository's sync. Default: 10 minutes.
 	RepoTimeout time.Duration
 	// AllowURL decides which clone URLs may be fetched. Default: only
@@ -148,7 +152,10 @@ func New(lister Lister, opts Options) (*Manager, error) {
 		opts.Interval = 6 * time.Hour
 	}
 	if opts.Concurrency <= 0 {
-		opts.Concurrency = 4
+		opts.Concurrency = 2
+	}
+	if opts.CacheSize <= 0 {
+		opts.CacheSize = 16 << 20
 	}
 	if opts.RepoTimeout <= 0 {
 		opts.RepoTimeout = 10 * time.Minute
@@ -322,6 +329,11 @@ func (m *Manager) syncRepo(ctx context.Context, r github.Repo) bool {
 	onDisk := e.status.OnDisk
 	m.mu.RUnlock()
 
+	// Logged before the fetch: if the process dies mid-sync (out of memory, for
+	// one), the last "syncing" line without a result names the repository
+	m.log.InfoContext(ctx, "mirror: syncing", slog.String("repository", r.Name))
+	started := m.now()
+
 	var err error
 	empty := false
 	switch {
@@ -354,6 +366,7 @@ func (m *Manager) syncRepo(ctx context.Context, r github.Repo) bool {
 		s.State = StateEmpty
 		s.LastError = ""
 		s.LastSuccess = now
+		m.log.InfoContext(ctx, "mirror: synced", slog.String("repository", r.Name), slog.String("result", "empty"))
 	default:
 		s.State = StateOK
 		s.LastError = ""
@@ -361,6 +374,8 @@ func (m *Manager) syncRepo(ctx context.Context, r github.Repo) bool {
 		s.OnDisk = true
 		s.SizeBytes = size
 		m.metrics.size.WithLabelValues(r.Name).Set(float64(size))
+		m.log.InfoContext(ctx, "mirror: synced", slog.String("repository", r.Name),
+			slog.Int64("bytes", size), slog.Duration("took", now.Sub(started)))
 	}
 	m.metrics.lastSuccess.WithLabelValues(r.Name).Set(float64(now.Unix()))
 	return true
@@ -400,10 +415,11 @@ func (m *Manager) fetch(ctx context.Context, e *entry, r github.Repo) (empty boo
 // fetchInto fetches GitHub's branches and tags into the bare repository at
 // path and points its HEAD at the default branch.
 func (m *Manager) fetchInto(ctx context.Context, path string, r github.Repo) (empty bool, err error) {
-	repo, err := git.PlainOpen(path)
+	repo, err := gitstore.Open(path, m.opts.CacheSize)
 	if err != nil {
-		return false, fmt.Errorf("opening: %w", err)
+		return false, err
 	}
+	defer func() { _ = repo.Close() }()
 	// The remote is GitHub's plain clone URL, rewritten when it changes (a
 	// renamed repository). The token is never stored: it's passed per fetch.
 	cfg, err := repo.Config()
@@ -424,7 +440,8 @@ func (m *Manager) fetchInto(ctx context.Context, path string, r github.Repo) (em
 		Prune:      true,
 		Force:      true,
 	}
-	if strings.HasPrefix(r.CloneURL, "https://") {
+	// No token, no credentials: public repositories can be fetched anonymously
+	if strings.HasPrefix(r.CloneURL, "https://") && m.opts.Token != "" {
 		opts.Auth = &githttp.BasicAuth{Username: "x-access-token", Password: m.opts.Token}
 	}
 	err = repo.FetchContext(ctx, opts)

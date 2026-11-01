@@ -22,6 +22,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/jakefrenzel/cyberlab-mirror/api/internal/gitstore"
 )
 
 var (
@@ -104,24 +106,30 @@ type Commit struct {
 	Parents     []string  `json:"parents"`
 }
 
+// CacheSize bounds the object cache of a repository opened for one request.
+const CacheSize = 8 << 20
+
 // Repo is an open repository.
 type Repo struct {
 	r *git.Repository
+	// closer releases the files of a repository opened from disk
+	closer io.Closer
 }
 
-// Open opens the bare repository at path.
+// Open opens the bare repository at path, with a small object cache: each
+// request opens its own.
 func Open(path string) (*Repo, error) {
-	r, err := git.PlainOpen(path)
+	r, err := gitstore.Open(path, CacheSize)
 	if err != nil {
-		return nil, fmt.Errorf("browse: opening repository: %w", err)
+		return nil, fmt.Errorf("browse: %w", err)
 	}
-	return &Repo{r: r}, nil
+	return &Repo{r: r.Repository, closer: r}, nil
 }
 
 // Close releases the repository's open files.
 func (b *Repo) Close() error {
-	if c, ok := b.r.Storer.(io.Closer); ok {
-		return c.Close()
+	if b.closer != nil {
+		return b.closer.Close()
 	}
 	return nil
 }

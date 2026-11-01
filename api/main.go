@@ -105,11 +105,12 @@ func run(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	m, err := mirror.New(gh, mirror.Options{
-		Dir:      cfg.DataDir,
-		Token:    cfg.GitHubToken,
-		Interval: cfg.SyncInterval,
-		Logger:   log,
-		Metrics:  mirror.NewMetrics(reg),
+		Dir:         cfg.DataDir,
+		Token:       cfg.GitHubToken,
+		Interval:    cfg.SyncInterval,
+		Concurrency: cfg.SyncConcurrency,
+		Logger:      log,
+		Metrics:     mirror.NewMetrics(reg),
 	})
 	if err != nil {
 		return err

@@ -27,7 +27,7 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddr != ":8080" || c.OpsAddr != ":9090" || c.DataDir != "/data/repos" || c.SyncInterval != 6*time.Hour || c.AppName != "Cyberlab Mirror" || c.MaxFileSize != 1<<20 {
+	if c.ListenAddr != ":8080" || c.OpsAddr != ":9090" || c.DataDir != "/data/repos" || c.SyncInterval != 6*time.Hour || c.AppName != "Cyberlab Mirror" || c.MaxFileSize != 1<<20 || c.SyncConcurrency != 2 {
 		t.Errorf("defaults = %+v", c)
 	}
 	if strings.Join(c.AllowedEmails, ",") != "me@example.com,other@example.com" {
@@ -52,14 +52,16 @@ func TestReportsEveryMissingSetting(t *testing.T) {
 
 func TestInvalidSettings(t *testing.T) {
 	cases := map[string]map[string]string{
-		"interval too short":  {"SYNC_INTERVAL": "1m"},
-		"interval unparsable": {"SYNC_INTERVAL": "often"},
-		"bad email":           {"ALLOWED_EMAILS": "not-an-email"},
-		"display name email":  {"ALLOWED_EMAILS": "Me <me@example.com>"},
-		"only commas":         {"ALLOWED_EMAILS": " , "},
-		"bad proxy":           {"TRUSTED_PROXIES": "10.0.0.0/33"},
-		"half of oauth":       {"GITHUB_OAUTH_CLIENT_ID": "Iv1.x"},
-		"tiny max file":       {"MAX_FILE_SIZE": "10"},
+		"interval too short":   {"SYNC_INTERVAL": "1m"},
+		"interval unparsable":  {"SYNC_INTERVAL": "often"},
+		"bad email":            {"ALLOWED_EMAILS": "not-an-email"},
+		"display name email":   {"ALLOWED_EMAILS": "Me <me@example.com>"},
+		"only commas":          {"ALLOWED_EMAILS": " , "},
+		"bad proxy":            {"TRUSTED_PROXIES": "10.0.0.0/33"},
+		"half of oauth":        {"GITHUB_OAUTH_CLIENT_ID": "Iv1.x"},
+		"tiny max file":        {"MAX_FILE_SIZE": "10"},
+		"no concurrency":       {"SYNC_CONCURRENCY": "0"},
+		"too much concurrency": {"SYNC_CONCURRENCY": "9"},
 	}
 	for name, o := range cases {
 		if _, err := FromEnv(env(o)); err == nil {
