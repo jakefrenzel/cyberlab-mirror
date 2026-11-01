@@ -63,6 +63,10 @@ var ErrNotFound = errors.New("mirror: repository not found")
 // ErrNotMirrored means the repository is known but has no copy on disk yet.
 var ErrNotMirrored = errors.New("mirror: repository not mirrored yet")
 
+// ErrNotListed means the repository isn't on GitHub's list now, so it can't
+// be synced on its own: it's gone, or the first sync hasn't listed it yet.
+var ErrNotListed = errors.New("mirror: repository not listed by GitHub")
+
 // validName matches internal/github: names become directory names.
 var validName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
@@ -132,8 +136,14 @@ type Manager struct {
 	mu    sync.RWMutex
 	repos map[string]*entry
 
-	running atomic.Bool
-	trigger chan struct{}
+	running     atomic.Bool
+	trigger     chan struct{}
+	triggerRepo chan string
+
+	// schedule guards lastRun and nextRun
+	schedule sync.Mutex
+	lastRun  time.Time
+	nextRun  time.Time
 }
 
 type entry struct {
@@ -141,6 +151,9 @@ type entry struct {
 	// fetch or move it into place.
 	data   sync.RWMutex
 	status Status
+	// repo is the repository as GitHub last listed it; nil for a copy found
+	// on disk that GitHub hasn't listed since the process started.
+	repo *github.Repo
 }
 
 // New returns a Manager. Call Run to start syncing.
@@ -176,13 +189,14 @@ func New(lister Lister, opts Options) (*Manager, error) {
 		return nil, fmt.Errorf("mirror: creating %s: %w", opts.Dir, err)
 	}
 	m := &Manager{
-		opts:    opts,
-		lister:  lister,
-		log:     opts.Logger,
-		now:     opts.Now,
-		metrics: opts.Metrics,
-		repos:   map[string]*entry{},
-		trigger: make(chan struct{}, 1),
+		opts:        opts,
+		lister:      lister,
+		log:         opts.Logger,
+		now:         opts.Now,
+		metrics:     opts.Metrics,
+		repos:       map[string]*entry{},
+		trigger:     make(chan struct{}, 1),
+		triggerRepo: make(chan string, 1),
 	}
 	if err := m.loadFromDisk(); err != nil {
 		return nil, err
@@ -191,17 +205,36 @@ func New(lister Lister, opts Options) (*Manager, error) {
 	return m, nil
 }
 
-// Run syncs now, then every Interval or when triggered, until ctx ends.
+// Run syncs now, then Interval after each full sync finishes or when
+// triggered, until ctx ends. A triggered full sync restarts the wait; a
+// single repository's sync doesn't.
 func (m *Manager) Run(ctx context.Context) {
-	t := time.NewTicker(m.opts.Interval)
+	t := time.NewTimer(m.opts.Interval)
 	defer t.Stop()
 	for {
+		m.setNextRun(time.Time{})
 		m.SyncAll(ctx)
+		t.Reset(m.opts.Interval)
+		m.setNextRun(m.now().Add(m.opts.Interval))
+		if !m.wait(ctx, t) {
+			return
+		}
+	}
+}
+
+// wait runs single-repository syncs until it's time for a full sync. It
+// returns false when ctx ends.
+func (m *Manager) wait(ctx context.Context, t *time.Timer) bool {
+	for {
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-t.C:
+			return true
 		case <-m.trigger:
+			return true
+		case name := <-m.triggerRepo:
+			m.SyncOne(ctx, name)
 		}
 	}
 }
@@ -220,8 +253,56 @@ func (m *Manager) Trigger() bool {
 	}
 }
 
+// TriggerRepo asks Run to sync one repository now. It returns false if a
+// sync is already running or queued, ErrNotFound for an unknown name, and
+// ErrNotListed for one GitHub doesn't list now (gone, or not listed since
+// the process started).
+func (m *Manager) TriggerRepo(name string) (bool, error) {
+	if _, err := m.listed(name); err != nil {
+		return false, err
+	}
+	if m.running.Load() {
+		return false, nil
+	}
+	select {
+	case m.triggerRepo <- name:
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+// listed returns the repository as GitHub last listed it.
+func (m *Manager) listed(name string) (github.Repo, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	e, ok := m.repos[name]
+	if !ok {
+		return github.Repo{}, ErrNotFound
+	}
+	if e.repo == nil || e.status.State == StateGone {
+		return github.Repo{}, ErrNotListed
+	}
+	return *e.repo, nil
+}
+
 // Syncing reports whether a sync is running.
 func (m *Manager) Syncing() bool { return m.running.Load() }
+
+// Schedule returns when the last full sync finished and when the next one
+// starts. Either is zero when unknown: no full sync has finished yet, or
+// one is running now.
+func (m *Manager) Schedule() (last, next time.Time) {
+	m.schedule.Lock()
+	defer m.schedule.Unlock()
+	return m.lastRun, m.nextRun
+}
+
+func (m *Manager) setNextRun(t time.Time) {
+	m.schedule.Lock()
+	defer m.schedule.Unlock()
+	m.nextRun = t
+}
 
 // List returns every repository, sorted by name.
 func (m *Manager) List() []Status {
@@ -311,11 +392,30 @@ func (m *Manager) SyncAll(ctx context.Context) {
 	m.metrics.runs.WithLabelValues(result).Inc()
 	m.metrics.duration.Observe(m.now().Sub(start).Seconds())
 	m.metrics.lastRun.Set(float64(m.now().Unix()))
+	m.schedule.Lock()
+	m.lastRun = m.now()
+	m.schedule.Unlock()
 	m.updateStateMetrics()
 	m.log.InfoContext(ctx, "mirror: sync finished",
 		slog.Int("repositories", len(repos)),
 		slog.Int("failed", int(failed.Load())),
 		slog.Duration("took", m.now().Sub(start)))
+}
+
+// SyncOne syncs one repository GitHub has listed, unless a sync is already
+// running. It's for retrying a single repository between full syncs.
+func (m *Manager) SyncOne(ctx context.Context, name string) {
+	if !m.running.CompareAndSwap(false, true) {
+		return
+	}
+	defer m.running.Store(false)
+	r, err := m.listed(name)
+	if err != nil {
+		m.log.WarnContext(ctx, "mirror: can't sync on its own", slog.String("repository", name), slog.String("error", err.Error()))
+		return
+	}
+	m.syncRepo(ctx, r)
+	m.updateStateMetrics()
 }
 
 // syncRepo fetches one repository and records the outcome. It returns false
@@ -471,6 +571,7 @@ func (m *Manager) upsert(r github.Repo) {
 		e = &entry{status: Status{Name: r.Name, State: StatePending}}
 		m.repos[r.Name] = e
 	}
+	e.repo = &r
 	s := &e.status
 	s.FullName = r.FullName
 	s.Description = r.Description

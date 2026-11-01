@@ -19,7 +19,7 @@ The browser never talks to the API. The web app holds the session in an `__Host-
 ## Mirroring
 
 - **What's copied:** every repository the token's user owns, as a bare repository with all branches and tags. GitHub's pull request refs are left out.
-- **When:** at startup, then every 6 hours (`SYNC_INTERVAL`), or on demand with `POST /v1/syncs`. Four repositories sync at a time.
+- **When:** at startup, then 6 hours (`SYNC_INTERVAL`) after each full sync finishes, or on demand with `POST /v1/syncs`. One repository can be retried on its own between full syncs. Two repositories sync at a time by default (`SYNC_CONCURRENCY`).
 - **Safe updates:** a first copy is fetched into a temporary directory and renamed into place, so a half-finished clone is never served. Browsing takes a per-repository read lock, so it never sees a fetch in progress.
 - **Matches GitHub:** branches deleted or force-pushed on GitHub are deleted or rewritten in the copy. Point-in-time snapshots are a later step.
 - **Never deletes:** a repository that disappears from GitHub (or from the token's view) is kept and marked `gone`.
@@ -45,12 +45,13 @@ All routes need a session (`Authorization: Bearer <token>`) for an allowed addre
 
 | Route | Returns |
 |---|---|
-| `GET /v1/repos` | Every repository with its sync state, last success, last error, and size |
+| `GET /v1/repos` | Every repository with its sync state, last success, last error, and size, plus when the last full sync finished and the next one starts (`last_run_at`, `next_run_at`; `null` while unknown) |
 | `GET /v1/repos/{name}` | One repository, plus its branches and tags |
 | `GET /v1/repos/{name}/tree?ref=&path=` | A directory's entries: directories first, with type, size, and executable bit |
 | `GET /v1/repos/{name}/blob?ref=&path=` | A file. Text up to 1 MiB comes back as a JSON string. Binary or larger files return metadata only. Symlinks return their target and are never followed |
 | `GET /v1/repos/{name}/commits?ref=&path=&page=` | History, 30 commits per page, optionally only those touching `path` |
-| `POST /v1/syncs` | Starts a sync now (`202 {"queued": true}`) |
+| `GET /v1/repos/{name}/files?ref=` | Every file's path, sorted, for searching by name. At most 10,000, with `truncated` set when there are more |
+| `POST /v1/syncs` | Starts a sync of everything now (`202 {"queued": true}`). With `{"repository": "<name>"}`, syncs just that one; `409 not_listed` if GitHub doesn't list it now |
 
 Plus the module's own endpoints (`/v1/users`, `/v1/sessions`, `/v1/email-verifications`, …).
 

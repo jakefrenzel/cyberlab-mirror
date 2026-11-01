@@ -41,7 +41,9 @@ type Mirror interface {
 	Get(name string) (mirror.Status, bool)
 	Read(name string, fn func(path string) error) error
 	Trigger() bool
+	TriggerRepo(name string) (bool, error)
 	Syncing() bool
+	Schedule() (last, next time.Time)
 }
 
 // Options configures the API handler.
@@ -59,6 +61,12 @@ type Options struct {
 
 // perPage is the number of commits per page of history.
 const perPage = 30
+
+// maxFiles bounds the file list for searching by name.
+const maxFiles = 10000
+
+// maxSyncBody bounds POST /v1/syncs, whose body is at most a repository name.
+const maxSyncBody = 1 << 10
 
 // maxSignUpBody matches the auth module's own request size limit.
 const maxSignUpBody = 64 << 10
@@ -101,6 +109,7 @@ func New(opts Options) http.Handler {
 	mux.Handle("GET /v1/repos/{name}/tree", member(s.tree))
 	mux.Handle("GET /v1/repos/{name}/blob", member(s.blob))
 	mux.Handle("GET /v1/repos/{name}/commits", member(s.commits))
+	mux.Handle("GET /v1/repos/{name}/files", member(s.files))
 	mux.Handle("POST /v1/syncs", member(s.startSync))
 
 	return securityHeaders(withRequestID(s.signUpGate(opts.Guard.Protect(mux))))
@@ -270,7 +279,15 @@ func (s *server) listRepos(w http.ResponseWriter, _ *http.Request) {
 	for _, st := range list {
 		out = append(out, toRepoJSON(st))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"repositories": out, "syncing": s.opts.Mirror.Syncing()})
+	last, next := s.opts.Mirror.Schedule()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"repositories": out,
+		"syncing":      s.opts.Mirror.Syncing(),
+		// When the last full sync finished and the next one starts; null
+		// when unknown (none has finished yet, or one is running now)
+		"last_run_at": timePtr(last),
+		"next_run_at": timePtr(next),
+	})
 }
 
 func (s *server) getRepo(w http.ResponseWriter, r *http.Request) {
@@ -380,6 +397,29 @@ func (s *server) commits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// files lists every file's path at a ref, for searching by name.
+func (s *server) files(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.status(w, r)
+	if !ok {
+		return
+	}
+	ref := r.URL.Query().Get("ref")
+	var resp map[string]any
+	err := s.browse(st.Name, func(repo *browse.Repo) error {
+		c, paths, truncated, err := repo.Files(ref, maxFiles)
+		if err != nil {
+			return err
+		}
+		resp = map[string]any{"commit": c.Hash.String(), "ref": ref, "files": paths, "truncated": truncated}
+		return nil
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // browse opens a repository's copy, runs fn while no sync can change it, and
 // closes it again.
 func (s *server) browse(name string, fn func(*browse.Repo) error) error {
@@ -393,8 +433,41 @@ func (s *server) browse(name string, fn func(*browse.Repo) error) error {
 	})
 }
 
-func (s *server) startSync(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusAccepted, map[string]bool{"queued": s.opts.Mirror.Trigger()})
+// startSync queues a sync of every repository, or with a body of
+// {"repository": "<name>"}, of just that one.
+func (s *server) startSync(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSyncBody))
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "The request is too large.")
+		return
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		writeJSON(w, http.StatusAccepted, map[string]bool{"queued": s.opts.Mirror.Trigger()})
+		return
+	}
+	var req struct {
+		Repository string `json:"repository"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil || req.Repository == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", `Send no body to sync everything, or {"repository": "<name>"} to sync one.`)
+		return
+	}
+	if !validRepoName.MatchString(req.Repository) {
+		writeError(w, http.StatusNotFound, "not_found", "No repository by that name.")
+		return
+	}
+	queued, err := s.opts.Mirror.TriggerRepo(req.Repository)
+	switch {
+	case errors.Is(err, mirror.ErrNotListed):
+		writeError(w, http.StatusConflict, "not_listed", "GitHub doesn't list this repository now, so it can't be synced on its own.")
+		return
+	case err != nil:
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]bool{"queued": queued})
 }
 
 // status looks up the repository named in the path, answering 404 itself.

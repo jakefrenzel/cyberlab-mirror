@@ -69,8 +69,10 @@ func (g *fakeGuard) Protect(mux *http.ServeMux) http.Handler {
 // fakeMirror serves one repository on disk ("one") and one known but not
 // copied yet ("pending").
 type fakeMirror struct {
-	path     string
-	triggers atomic.Int32
+	path         string
+	triggers     atomic.Int32
+	repoTriggers atomic.Int32
+	lastRepo     atomic.Value
 }
 
 func (m *fakeMirror) List() []mirror.Status {
@@ -101,6 +103,22 @@ func (m *fakeMirror) Read(name string, fn func(string) error) error {
 
 func (m *fakeMirror) Trigger() bool { return m.triggers.Add(1) == 1 }
 func (m *fakeMirror) Syncing() bool { return false }
+
+// TriggerRepo knows "one" (listed) and "pending" (not listed yet).
+func (m *fakeMirror) TriggerRepo(name string) (bool, error) {
+	switch name {
+	case "one":
+		m.lastRepo.Store(name)
+		return m.repoTriggers.Add(1) == 1, nil
+	case "pending":
+		return false, mirror.ErrNotListed
+	}
+	return false, mirror.ErrNotFound
+}
+
+func (m *fakeMirror) Schedule() (last, next time.Time) {
+	return time.Unix(1_700_000_000, 0), time.Time{}
+}
 
 func newRepoOnDisk(t *testing.T) string {
 	t.Helper()
@@ -220,6 +238,9 @@ func TestListAndGetRepos(t *testing.T) {
 	if len(repos) != 2 || one["name"] != "one" || one["state"] != "ok" || one["private"] != true || one["last_success_at"] != "2023-11-14T22:13:20Z" || one["pushed_at"] != nil {
 		t.Errorf("repositories = %v", repos)
 	}
+	if body := decode(t, h.do("GET", "/v1/repos", me, "")); body["last_run_at"] != "2023-11-14T22:13:20Z" || body["next_run_at"] != nil {
+		t.Errorf("schedule: last %v, next %v", body["last_run_at"], body["next_run_at"])
+	}
 
 	rec = h.do("GET", "/v1/repos/one", me, "")
 	refs, _ := decode(t, rec)["refs"].(map[string]any)
@@ -317,6 +338,63 @@ func TestStartSync(t *testing.T) {
 	}
 	if rec := h.do("POST", "/v1/syncs", me, ""); decode(t, rec)["queued"] != false {
 		t.Errorf("second should report already queued: %s", rec.Body)
+	}
+}
+
+func TestSyncOneRepository(t *testing.T) {
+	h := newHarness(t)
+	rec := h.do("POST", "/v1/syncs", me, `{"repository":"one"}`)
+	if rec.Code != http.StatusAccepted || decode(t, rec)["queued"] != true || h.mirror.lastRepo.Load() != "one" {
+		t.Errorf("first: %d %s", rec.Code, rec.Body)
+	}
+	if rec := h.do("POST", "/v1/syncs", me, `{"repository":"one"}`); decode(t, rec)["queued"] != false {
+		t.Errorf("second should report already queued: %s", rec.Body)
+	}
+	if h.mirror.triggers.Load() != 0 {
+		t.Error("a single repository's sync started a full one")
+	}
+	for body, want := range map[string]struct {
+		status int
+		code   string
+	}{
+		`{"repository":"pending"}`:                           {http.StatusConflict, "not_listed"},
+		`{"repository":"missing"}`:                           {http.StatusNotFound, "not_found"},
+		`{"repository":"../etc"}`:                            {http.StatusNotFound, "not_found"},
+		`{"repository":""}`:                                  {http.StatusBadRequest, "invalid_request"},
+		`{"repository":"one","force":true}`:                  {http.StatusBadRequest, "invalid_request"},
+		`not json`:                                           {http.StatusBadRequest, "invalid_request"},
+		`{"repository":"` + strings.Repeat("x", 2000) + `"}`: {http.StatusRequestEntityTooLarge, "request_too_large"},
+	} {
+		rec := h.do("POST", "/v1/syncs", me, body)
+		if rec.Code != want.status || errCode(t, rec) != want.code {
+			t.Errorf("%.40s: %d %s", body, rec.Code, rec.Body)
+		}
+	}
+	if rec := h.do("POST", "/v1/syncs", "stranger@example.com", `{"repository":"one"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("not allowlisted: %d", rec.Code)
+	}
+}
+
+func TestFileList(t *testing.T) {
+	h := newHarness(t)
+	rec := h.do("GET", "/v1/repos/one/files", me, "")
+	body := decode(t, rec)
+	files, _ := body["files"].([]any)
+	if rec.Code != http.StatusOK || len(files) != 2 || files[0] != "README.md" || files[1] != "src/app.go" || body["truncated"] != false || len(body["commit"].(string)) != 40 {
+		t.Errorf("files: %d %s", rec.Code, rec.Body)
+	}
+	for target, want := range map[string]int{
+		"/v1/repos/one/files?ref=nope":   http.StatusNotFound,
+		"/v1/repos/one/files?ref=..%2Fx": http.StatusBadRequest,
+		"/v1/repos/pending/files":        http.StatusConflict,
+		"/v1/repos/missing/files":        http.StatusNotFound,
+	} {
+		if rec := h.do("GET", target, me, ""); rec.Code != want {
+			t.Errorf("%s: %d, want %d", target, rec.Code, want)
+		}
+	}
+	if rec := h.do("GET", "/v1/repos/one/files", "", ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no session: %d", rec.Code)
 	}
 }
 

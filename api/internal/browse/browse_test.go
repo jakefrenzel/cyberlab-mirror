@@ -297,3 +297,32 @@ func TestLog(t *testing.T) {
 		t.Error("page 0 accepted")
 	}
 }
+
+func TestFiles(t *testing.T) {
+	fx := newFixture(t)
+	c, paths, truncated, err := fx.repo.Files("main", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Hash != fx.commits[4] || truncated {
+		t.Errorf("commit %s, truncated %v", c.Hash, truncated)
+	}
+	want := "README.md,big.txt,bin.dat,escape,latin1.txt,run.sh,src/main.go,src/util/util.go"
+	if got := strings.Join(paths, ","); got != want {
+		t.Errorf("paths = %s\nwant    %s", got, want)
+	}
+
+	_, paths, truncated, err = fx.repo.Files("main", 3)
+	if err != nil || len(paths) != 3 || !truncated {
+		t.Errorf("limited: %v, truncated %v, %v", paths, truncated, err)
+	}
+	if _, old, _, _ := fx.repo.Files("v0.1.0", 100); strings.Join(old, ",") != "README.md" {
+		t.Errorf("v0.1.0 = %v", old)
+	}
+	if _, _, _, err := fx.repo.Files("no-such-branch", 100); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing ref: %v", err)
+	}
+	if _, _, _, err := fx.repo.Files("../x", 100); !errors.Is(err, ErrBadRef) {
+		t.Errorf("bad ref: %v", err)
+	}
+}

@@ -319,6 +319,49 @@ func (b *Repo) Tree(ref, path string) (*object.Commit, []Entry, error) {
 	return c, entries, nil
 }
 
+// Files lists the path of every file and symlink in the commit ref names,
+// sorted, for searching by name. It stops at limit paths; truncated is true
+// when there were more. Submodules are left out, and so are entries git
+// itself would refuse to check out (a ".git" directory, for one).
+func (b *Repo) Files(ref string, limit int) (c *object.Commit, paths []string, truncated bool, err error) {
+	c, err = b.Resolve(ref)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	root, err := c.Tree()
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("browse: reading tree: %w", err)
+	}
+	w := object.NewTreeWalker(root, true, nil)
+	defer w.Close()
+	paths = []string{}
+	for {
+		name, e, err := w.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			if e.Name != "" {
+				// A name that fails git's path checks: skip it, keep walking
+				continue
+			}
+			return nil, nil, false, fmt.Errorf("browse: walking tree: %w", err)
+		}
+		switch e.Mode {
+		case filemode.Regular, filemode.Executable, filemode.Symlink, filemode.Deprecated:
+		default:
+			continue
+		}
+		if len(paths) == limit {
+			truncated = true
+			break
+		}
+		paths = append(paths, name)
+	}
+	sort.Strings(paths)
+	return c, paths, truncated, nil
+}
+
 // File reads the file at path in the commit ref names. Content is returned
 // only for text files of at most maxSize bytes.
 func (b *Repo) File(ref, path string, maxSize int64) (*object.Commit, File, error) {

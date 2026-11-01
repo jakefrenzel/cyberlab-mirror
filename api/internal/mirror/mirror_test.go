@@ -388,3 +388,91 @@ func TestRedact(t *testing.T) {
 		t.Errorf("not bounded: %d bytes", len(long))
 	}
 }
+
+func TestSyncOneRetriesOnlyThatRepository(t *testing.T) {
+	loader := serveSources(t)
+	newSource(t, loader, "two")
+	commit(t, newSource(t, loader, "one"), map[string]string{"a.txt": "1"}, "one")
+
+	dir := t.TempDir()
+	m, _ := newManager(t, &fakeLister{repos: []github.Repo{ghRepo("one"), ghRepo("two"), ghRepo("broken")}}, dir)
+	m.SyncAll(context.Background())
+	if s, _ := m.Get("broken"); s.State != StateFailed {
+		t.Fatalf("broken: state = %s, want failed", s.State)
+	}
+	oneBefore, _ := m.Get("one")
+
+	// The source turns up, and only it is synced again
+	commit(t, newSource(t, loader, "broken"), map[string]string{"b.txt": "2"}, "fixed")
+	m.SyncOne(context.Background(), "broken")
+	if s, _ := m.Get("broken"); s.State != StateOK || !s.OnDisk || s.LastError != "" {
+		t.Errorf("broken after retry: %+v", s)
+	}
+	if s, _ := m.Get("one"); !s.LastAttempt.Equal(oneBefore.LastAttempt) {
+		t.Error("retrying one repository synced another")
+	}
+	if v := testutil.ToFloat64(m.metrics.repos.WithLabelValues("failed")); v != 0 {
+		t.Errorf("repositories{state=failed} = %v after the retry, want 0", v)
+	}
+}
+
+func TestTriggerRepo(t *testing.T) {
+	loader := serveSources(t)
+	commit(t, newSource(t, loader, "one"), map[string]string{"a.txt": "1"}, "one")
+	dir := t.TempDir()
+	l := &fakeLister{repos: []github.Repo{ghRepo("one")}}
+	m, _ := newManager(t, l, dir)
+
+	if _, err := m.TriggerRepo("nope"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown: %v", err)
+	}
+	m.SyncAll(context.Background())
+	if ok, err := m.TriggerRepo("one"); !ok || err != nil {
+		t.Errorf("first: %v, %v", ok, err)
+	}
+	if ok, err := m.TriggerRepo("one"); ok || err != nil {
+		t.Errorf("second should report one is already queued: %v, %v", ok, err)
+	}
+
+	// Gone from GitHub: nothing to fetch it from
+	<-m.triggerRepo
+	l.set()
+	m.SyncAll(context.Background())
+	if _, err := m.TriggerRepo("one"); !errors.Is(err, ErrNotListed) {
+		t.Errorf("gone: %v", err)
+	}
+
+	// Found on disk after a restart, before GitHub has listed it
+	m2, _ := newManager(t, &fakeLister{}, dir)
+	if _, err := m2.TriggerRepo("one"); !errors.Is(err, ErrNotListed) {
+		t.Errorf("not listed yet: %v", err)
+	}
+}
+
+func TestRunSchedule(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(&fakeLister{}, Options{Dir: t.TempDir(), Interval: time.Hour, Metrics: NewMetrics(reg)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last, next := m.Schedule(); !last.IsZero() || !next.IsZero() {
+		t.Errorf("before the first run: last %v, next %v", last, next)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { m.Run(ctx); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	var last, next time.Time
+	for time.Now().Before(deadline) {
+		if last, next = m.Schedule(); !next.IsZero() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if last.IsZero() || next.Sub(last) < 59*time.Minute || next.Sub(last) > time.Hour+time.Second {
+		t.Errorf("after the first run: last %v, next %v (want about an hour apart)", last, next)
+	}
+}
