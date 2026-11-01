@@ -6,19 +6,24 @@ It starts from the auth module's Next.js template (`templates/nextjs`, **version
 
 ## Pages
 
-| Path                                     | What it shows                                                                                                                      |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `/repos`                                 | Every repository with its sync state, last sync, size, and the last error for failed ones. **Sync now** starts a sync              |
-| `/repos/{name}?ref=&path=`               | A folder: directories first, then files, symlinks, and submodules. A picker switches between branches and tags, without JavaScript |
-| `/repos/{name}/blob?ref=&path=`          | A file's text. Binary and large files show why they aren't shown; a symlink shows its target and is never followed                 |
-| `/repos/{name}/commits?ref=&path=&page=` | History, 30 commits a page, optionally for one file. Each commit links to the files at that commit                                 |
-| `/login`, `/sign-up`, `/account`, …      | The template's auth pages, unchanged                                                                                               |
+The design is the dark, tonal redesign (`app/globals.css` holds its colour tokens; Figtree and IBM Plex Mono come from `next/font`, so they're served from this app). One breakpoint, at 760px, switches to the phone layout.
+
+| Path                                     | What it shows                                                                                                                                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/repos?filter=`                         | Sync health (a count, a bar, and a legend that filters by state), the schedule with **Sync now**, and every repository: failed and gone ones first, each failed one with its error and **Retry** |
+| `/repos/{name}?ref=&path=`               | A folder, with a file tree beside it (a drawer on phones). A picker switches between branches and tags                                                                                           |
+| `/repos/{name}/blob?ref=&path=#L12`      | A file's text with syntax highlighting and line numbers; a line number selects that line and puts it in the URL. Binary and large files say why they aren't shown; a symlink isn't followed      |
+| `/repos/{name}/commits?ref=&path=`       | History grouped by day, 30 commits at a time, optionally for one file. Each commit's hash opens the files at that commit                                                                         |
+| `/account`                               | Email, password, two-factor authentication, sign-in providers, and sessions                                                                                                                       |
+| `/login`, `/sign-up`, …                  | The template's auth pages, restyled as one card                                                                                                                                                  |
+
+**⌘K** (or Ctrl+K, or the search pill) opens a palette that jumps to a repository, or to a file in the repository that's open.
 
 Every page under `/repos` and `/account` calls `requireSession`, which checks the session with the API on each request. The API checks the email allowlist on every call too.
 
 ## Security
 
-- **File contents are only ever text.** They're a text child of a `<pre>`, which React escapes, so a file full of `<script>` or `<img onerror>` is shown and never runs. A test renders such files and checks that no elements appear. There is no `dangerouslySetInnerHTML` anywhere.
+- **File contents are only ever text.** Syntax highlighting runs on the server with [Shiki](https://shiki.style), but only its tokens are used, never its HTML: each token is a text child, which React escapes, so a file full of `<script>` or `<img onerror>` is shown and never runs. Tests render such files, highlighted as HTML, Svelte, Markdown, and TSX, and check that no elements appear. There is no `dangerouslySetInnerHTML` anywhere. Shiki uses its JavaScript regex engine (no WebAssembly), and only the grammars listed in `lib/mirror/highlight.ts` are bundled.
 - **Content Security Policy with a nonce per response** ([`src/proxy.ts`](src/proxy.ts)). Scripts run only with that response's nonce, and `'strict-dynamic'` lets those load the rest of Next.js. The policy also sets `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` (plus GitHub's sign-in page when GitHub sign-in is on), and `frame-ancestors 'none'`.
 - **Every page renders per request.** Cache Components and partial prerendering are off, because both serve a static shell built ahead of time, and its scripts can't carry a per-request nonce. CI checks that every script on the auth pages carries the response's nonce.
 - **Other headers:** `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, cross-origin opener and resource policies, a restrictive `Permissions-Policy`, and no `X-Powered-By`.

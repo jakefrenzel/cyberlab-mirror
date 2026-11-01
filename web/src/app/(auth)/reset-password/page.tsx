@@ -1,19 +1,17 @@
 // From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
-import Link from "next/link";
-
+// cyberlab-mirror: restyled as the login card.
+import { AuthFooter, AuthHeader, AuthLink } from "@/components/auth/auth-card";
 import { ResetPasswordForm } from "@/components/auth/link-forms";
 
 export default function ResetPasswordPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Set a new password</h1>
+      <AuthHeader title="Set a new password" />
       <ResetPasswordForm />
-      <p className="text-sm">
+      <AuthFooter>
         Link expired?{" "}
-        <Link href="/forgot-password" className="underline">
-          Send a new one
-        </Link>
-      </p>
+        <AuthLink href="/forgot-password">Send a new one</AuthLink>
+      </AuthFooter>
     </>
   );
 }

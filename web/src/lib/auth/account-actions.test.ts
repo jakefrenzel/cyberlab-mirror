@@ -258,3 +258,15 @@ describe("logOutEverywhere", () => {
     expect(fakeRequest.setCookies.size).toBe(0);
   });
 });
+
+describe("changePassword's repeat", () => {
+  it("refuses a repeated password that doesn't match, without calling the API", async () => {
+    const state = await changePassword(
+      {},
+      form({ current_password: "a", new_password: "b", repeat_password: "c" }),
+    );
+    expect(state.fieldErrors?.repeat_password).toBe(
+      "The passwords don't match.",
+    );
+  });
+});

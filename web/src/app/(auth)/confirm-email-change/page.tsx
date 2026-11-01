@@ -1,14 +1,15 @@
 // From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// cyberlab-mirror: restyled as the login card.
+import { AuthHeader } from "@/components/auth/auth-card";
 import { ConfirmEmailChangeForm } from "@/components/auth/link-forms";
 
 export default function ConfirmEmailChangePage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Confirm your new email</h1>
-      <p>
-        Your account will use this address from now on. You&apos;ll be logged
-        out everywhere, and can log in again with the new address.
-      </p>
+      <AuthHeader
+        title="Confirm your new email"
+        subtitle="Your account will use this address from now on. You'll be logged out everywhere, and can log in again with the new address."
+      />
       <ConfirmEmailChangeForm />
     </>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 // From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// cyberlab-mirror: restyled.
 import { useActionState } from "react";
 
 import { Field, FormMessage } from "@/components/auth/field";
@@ -14,12 +15,13 @@ export function SignUpForm() {
     {},
   );
   return (
-    <form action={action} className="grid gap-4">
+    <form action={action} className="grid gap-3.5">
       <Field
         name="email"
         label="Email"
         type="email"
         autoComplete="email"
+        placeholder="you@example.com"
         required
         defaultValue={state.values?.email}
         error={state.fieldErrors?.email}
@@ -33,7 +35,12 @@ export function SignUpForm() {
         error={state.fieldErrors?.password}
       />
       <FormMessage message={state.message} />
-      <Button type="submit" disabled={pending}>
+      <Button
+        type="submit"
+        size="lg"
+        className="mt-1 w-full"
+        disabled={pending}
+      >
         Sign up
       </Button>
     </form>

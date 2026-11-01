@@ -1,24 +1,150 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* cyberlab-mirror: the dark, tonal theme from the redesign handoff. Every
+   colour is oklch, exactly as specified; one-off shades stay inline in the
+   components that use them. */
+
+@theme {
+  /* One breakpoint: phone layouts below 760px, desktop at and above it */
+  --breakpoint-*: initial;
+  --breakpoint-md: 47.5rem;
+
+  /* Surfaces (hue 275) */
+  --color-canvas: oklch(0.17 0.012 275);
+  --color-surface: oklch(0.205 0.014 275);
+  --color-surface-hover: oklch(0.235 0.018 275);
+  --color-container: oklch(0.22 0.016 275);
+  --color-container-high: oklch(0.25 0.016 275);
+  --color-search: oklch(0.23 0.014 275);
+  --color-search-hover: oklch(0.26 0.016 275);
+  --color-field: oklch(0.26 0.016 275);
+  --color-field-auth: oklch(0.27 0.016 275);
+  --color-badge: oklch(0.28 0.014 275);
+  --color-badge-fg: oklch(0.8 0.01 275);
+  --color-inset: oklch(0.18 0.012 275);
+  --color-divider: oklch(0.26 0.014 275);
+  --color-divider-strong: oklch(0.27 0.014 275);
+  --color-outline: oklch(0.4 0.012 275);
+  --color-menu-hover: oklch(0.3 0.018 275);
+  --color-active-row: oklch(0.3 0.03 275);
+
+  /* Text */
+  --color-fg: oklch(0.93 0.01 275);
+  --color-muted: oklch(0.74 0.01 275);
+  --color-subtle: oklch(0.62 0.012 275);
+  --color-dim: oklch(0.5 0.012 275);
+  --color-label: oklch(0.8 0.01 275);
+  --color-link: oklch(0.84 0.08 275);
+  --color-link-hover: oklch(0.92 0.05 275);
+
+  /* Accent */
+  --color-primary: oklch(0.8 0.09 275);
+  --color-on-primary: oklch(0.22 0.05 275);
+  --color-logo-mark: oklch(0.25 0.05 275);
+  --color-selected: oklch(0.36 0.05 275);
+  --color-on-selected: oklch(0.94 0.03 275);
+  --color-avatar: oklch(0.55 0.1 155);
+  --color-on-avatar: oklch(0.18 0.03 155);
+
+  /* Repository states: text, then background */
+  --color-ok: oklch(0.84 0.09 155);
+  --color-ok-bg: oklch(0.8 0.1 155 / 0.14);
+  --color-failed: oklch(0.86 0.09 25);
+  --color-failed-bg: oklch(0.7 0.15 25 / 0.2);
+  --color-gone: oklch(0.88 0.09 85);
+  --color-gone-bg: oklch(0.8 0.12 85 / 0.16);
+  --color-pending: oklch(0.86 0.07 265);
+  --color-pending-bg: oklch(0.78 0.1 265 / 0.18);
+  --color-empty: oklch(0.78 0.01 270);
+  --color-empty-bg: oklch(0.75 0.01 270 / 0.12);
+
+  /* Feedback */
+  --color-error-bg: oklch(0.3 0.07 25 / 0.55);
+  --color-error-title: oklch(0.9 0.06 25);
+  --color-error-text: oklch(0.8 0.05 25);
+  --color-error-button: oklch(0.86 0.09 25);
+  --color-on-error-button: oklch(0.25 0.06 25);
+  --color-destructive: oklch(0.86 0.09 25);
+  --color-destructive-border: oklch(0.7 0.15 25 / 0.5);
+  --color-warning-bg: oklch(0.8 0.12 85 / 0.14);
+  --color-warning: oklch(0.88 0.08 85);
+  --color-success-bg: oklch(0.8 0.1 155 / 0.14);
+  --color-success: oklch(0.88 0.08 155);
+  --color-scrim: oklch(0.1 0.01 275 / 0.6);
+
+  /* Syntax highlighting */
+  --color-hl-key: oklch(0.82 0.09 275);
+  --color-hl-string: oklch(0.84 0.1 155);
+  --color-hl-number: oklch(0.86 0.1 60);
+  --color-hl-comment: oklch(0.62 0.02 275);
+  --color-hl-keyword: oklch(0.8 0.12 330);
+  --color-hl-variable: oklch(0.85 0.08 215);
+  --color-hl-punctuation: oklch(0.62 0.012 275);
+  --color-hl-plain: oklch(0.9 0.01 275);
+  --color-hl-heading: oklch(0.95 0.03 275);
+  --color-hl-line: oklch(0.8 0.09 275 / 0.13);
+  --color-hl-line-number: oklch(0.9 0.05 275);
+
+  --shadow-menu: 0 8px 24px oklch(0 0 0 / 0.45);
+  --shadow-palette: 0 24px 64px oklch(0 0 0 / 0.5);
+  --shadow-drawer: 8px 0 32px oklch(0 0 0 / 0.4);
+  --shadow-button: 0 2px 6px oklch(0 0 0 / 0.3);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* From next/font in app/layout.tsx */
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+input::placeholder {
+  color: oklch(0.58 0.012 275);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Syntax colours: lib/mirror/highlight.ts gives each token one of these */
+.hl-key {
+  color: var(--color-hl-key);
+}
+.hl-string {
+  color: var(--color-hl-string);
+}
+.hl-number {
+  color: var(--color-hl-number);
+}
+.hl-comment {
+  color: var(--color-hl-comment);
+  font-style: italic;
+}
+.hl-keyword {
+  color: var(--color-hl-keyword);
+}
+.hl-variable {
+  color: var(--color-hl-variable);
+}
+.hl-punctuation {
+  color: var(--color-hl-punctuation);
+}
+.hl-heading {
+  color: var(--color-hl-heading);
+  font-weight: 600;
 }

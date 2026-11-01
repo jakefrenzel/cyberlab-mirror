@@ -1,6 +1,8 @@
 "use client";
 
 // From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// cyberlab-mirror: restyled; "Forgot your password?" sits in the password's label row.
+import Link from "next/link";
 import { useActionState } from "react";
 
 import { Field, FormMessage } from "@/components/auth/field";
@@ -14,7 +16,7 @@ export function LoginForm({ next }: { next?: string }) {
     {},
   );
   return (
-    <form action={action} className="grid gap-4">
+    <form action={action} className="grid gap-3.5">
       {next && <input type="hidden" name="next" value={next} />}
       <Field
         name="email"
@@ -32,9 +34,22 @@ export function LoginForm({ next }: { next?: string }) {
         autoComplete="current-password"
         required
         error={state.fieldErrors?.password}
+        labelEnd={
+          <Link
+            href="/forgot-password"
+            className="text-link hover:text-link-hover text-[13px] font-medium whitespace-nowrap"
+          >
+            Forgot your password?
+          </Link>
+        }
       />
       <FormMessage message={state.message} />
-      <Button type="submit" disabled={pending}>
+      <Button
+        type="submit"
+        size="lg"
+        className="mt-1 w-full"
+        disabled={pending}
+      >
         Log in
       </Button>
     </form>

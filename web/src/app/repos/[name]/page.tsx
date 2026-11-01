@@ -1,138 +1,131 @@
 import Link from "next/link";
 
+import { CodeLayout, loadFolders } from "@/components/mirror/code-layout";
+import { FileIcon, FolderIcon } from "@/components/mirror/file-tree";
 import {
-  Breadcrumbs,
-  ProblemMessage,
+  NotBrowsable,
+  ProblemCard,
   RepoHeader,
+  RepoPage,
 } from "@/components/mirror/parts";
+import { Badge } from "@/components/mirror/state";
 import { requireSession } from "@/lib/auth/session";
-import { getRepo, getTree } from "@/lib/mirror/data";
+import { getRepo } from "@/lib/mirror/data";
 import {
   first,
   formatBytes,
-  formatTime,
   href,
+  parentPath,
   repoHref,
-  shortHash,
 } from "@/lib/mirror/format";
 import type { Entry } from "@/lib/mirror/schemas";
-
-const ICON: Record<Entry["type"], string> = {
-  dir: "📁",
-  file: "📄",
-  symlink: "🔗",
-  submodule: "📦",
-};
 
 export default async function TreePage(props: PageProps<"/repos/[name]">) {
   const { name } = await props.params;
   const search = await props.searchParams;
   const ref = first(search.ref);
-  const dir = first(search.path) ?? "";
+  const dir = (first(search.path) ?? "").replace(/^\/+|\/+$/g, "");
   const here = href(repoHref(name), { ref, path: dir });
 
   await requireSession(here);
-  const [repo, tree] = await Promise.all([
-    getRepo(here, name),
-    getTree(here, name, ref, dir),
-  ]);
+  const repo = await getRepo(here, name);
   if ("problem" in repo) {
-    return <ProblemMessage problem={repo.problem} />;
+    return (
+      <RepoPage>
+        <ProblemCard problem={repo.problem} />
+      </RepoPage>
+    );
   }
+  const tree = repo.data.on_disk
+    ? await loadFolders(here, name, ref, dir)
+    : null;
 
   return (
-    <>
-      <RepoHeader repo={repo.data} view="" gitRef={ref} />
-      {"problem" in tree ? (
-        <ProblemMessage problem={tree.problem} />
-      ) : (
-        <section className="grid gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Breadcrumbs repo={name} path={tree.data.path} gitRef={ref} />
-            <span className="font-mono text-xs text-neutral-500">
-              {shortHash(tree.data.commit)}
-            </span>
-          </div>
-          <ul className="divide-y divide-neutral-100 rounded border border-neutral-200 text-sm dark:divide-neutral-900 dark:border-neutral-800">
-            {tree.data.path !== "" && (
+    <RepoPage>
+      <RepoHeader repo={repo.data} view="code" gitRef={ref} />
+      <NotBrowsable repo={repo.data} syncing={false} />
+      {tree && "problem" in tree && <ProblemCard problem={tree.problem} />}
+      {tree && "data" in tree && (
+        <CodeLayout
+          repo={repo.data}
+          gitRef={ref}
+          tree={tree.data}
+          dir={dir}
+          selected={dir}
+          file={false}
+        >
+          <ul className="bg-surface overflow-hidden rounded-[20px] p-1.5">
+            {dir !== "" && (
               <li>
                 <Link
-                  href={href(repoHref(name), {
-                    ref,
-                    path: parent(tree.data.path),
-                  })}
-                  className="block px-3 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                  href={href(repoHref(name), { ref, path: parentPath(dir) })}
+                  className="text-muted hover:bg-surface-hover flex h-11 items-center gap-3.5 rounded-[14px] px-4 font-mono"
                 >
                   ..
                 </Link>
               </li>
             )}
-            {tree.data.entries.map((e) => (
-              <li
-                key={e.path}
-                className="flex items-center gap-3 px-3 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-900"
-              >
-                <span aria-hidden>{ICON[e.type]}</span>
-                <EntryLink repo={name} entry={e} gitRef={ref} />
-                {e.executable && (
-                  <span className="text-xs text-neutral-500">executable</span>
-                )}
-                {(e.type === "file" || e.type === "symlink") && (
-                  <span className="ml-auto text-xs text-neutral-500">
-                    {formatBytes(e.size)}
-                  </span>
-                )}
+            {tree.data.folders[dir].map((e) => (
+              <li key={e.path}>
+                <EntryRow repo={name} entry={e} gitRef={ref} />
               </li>
             ))}
+            {tree.data.folders[dir].length === 0 && (
+              <li className="text-muted px-4 py-3">This folder is empty.</li>
+            )}
           </ul>
-          {tree.data.entries.length === 0 && (
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              This folder is empty.
-            </p>
-          )}
-        </section>
+        </CodeLayout>
       )}
-      <p className="text-xs text-neutral-500">
-        Last synced {formatTime(repo.data.last_success_at)}
-      </p>
-    </>
+    </RepoPage>
   );
 }
 
-function EntryLink({
+function EntryRow({
   repo,
-  entry,
+  entry: e,
   gitRef: ref,
 }: {
   repo: string;
   entry: Entry;
   gitRef?: string;
 }) {
-  if (entry.type === "dir") {
+  const inner = (
+    <>
+      {e.type === "dir" ? (
+        <FolderIcon className="h-[13px] w-4" />
+      ) : (
+        <FileIcon className="h-[15px] w-3" />
+      )}
+      <span className={e.type === "dir" ? "truncate font-medium" : "truncate"}>
+        {e.name}
+      </span>
+      {e.executable && <Badge>executable</Badge>}
+      {e.type === "symlink" && <Badge>symlink</Badge>}
+      {e.type === "submodule" && <Badge>submodule</Badge>}
+      {(e.type === "file" || e.type === "symlink") && (
+        <span className="ml-auto shrink-0 text-[13px] text-[oklch(0.66_0.01_275)]">
+          {formatBytes(e.size)}
+        </span>
+      )}
+    </>
+  );
+  const row =
+    "flex h-11 items-center gap-3.5 rounded-[14px] px-4 text-[14.5px]";
+  if (e.type === "submodule") {
+    // A submodule's contents are another repository; there's nothing here to open
     return (
-      <Link
-        href={href(repoHref(repo), { ref, path: entry.path })}
-        className="hover:underline"
-      >
-        {entry.name}
-      </Link>
+      <div className={row} title="Submodule">
+        {inner}
+      </div>
     );
   }
-  if (entry.type === "submodule") {
-    // A submodule's contents are another repository; there's nothing here to open
-    return <span title="Submodule">{entry.name}</span>;
-  }
+  const to =
+    e.type === "dir"
+      ? href(repoHref(repo), { ref, path: e.path })
+      : href(repoHref(repo, "/blob"), { ref, path: e.path });
   return (
-    <Link
-      href={href(repoHref(repo, "/blob"), { ref, path: entry.path })}
-      className="hover:underline"
-    >
-      {entry.name}
+    <Link href={to} className={`${row} hover:bg-surface-hover`}>
+      {inner}
     </Link>
   );
-}
-
-function parent(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i < 0 ? "" : path.slice(0, i);
 }

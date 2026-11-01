@@ -41,7 +41,18 @@ export type Repo = z.infer<typeof repoSchema>;
 export const repoListSchema = z.object({
   repositories: list(repoSchema),
   syncing: z.boolean(),
+  // When the last full sync finished and the next starts; null when unknown
+  last_run_at: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? null),
+  next_run_at: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? null),
 });
+
+export type RepoList = z.infer<typeof repoListSchema>;
 
 const refSchema = z.object({ name: z.string(), commit: z.string() });
 
@@ -125,6 +136,14 @@ export const commitPageSchema = z.object({
 });
 
 export type CommitPage = z.infer<typeof commitPageSchema>;
+
+// GET /v1/repos/{name}/files
+export const fileListSchema = z.object({
+  commit: z.string(),
+  ref: z.string(),
+  files: list(z.string()),
+  truncated: z.boolean(),
+});
 
 // POST /v1/syncs
 export const syncSchema = z.object({ queued: z.boolean() });

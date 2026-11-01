@@ -1,6 +1,7 @@
 "use client";
 
 // From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// cyberlab-mirror: restyled.
 import { useActionState } from "react";
 
 import { Field, FormMessage } from "@/components/auth/field";
@@ -49,6 +50,9 @@ export function ResetPasswordForm() {
             name="code"
             label="Two-factor code (if you've turned it on)"
             autoComplete="one-time-code"
+            inputMode="numeric"
+            placeholder="000000"
+            className="[&_input]:font-mono [&_input]:tracking-[0.2em]"
             error={state.fieldErrors?.code}
           />
         </>
@@ -67,31 +71,47 @@ function EmailRequestForm({
   action,
   submit,
   sent,
+  outlined = false,
 }: {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   submit: string;
   sent: string;
+  outlined?: boolean;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
     {},
   );
   if (state.done) {
-    return <p role="status">{sent}</p>;
+    return (
+      <p
+        role="status"
+        className="bg-field rounded-[14px] px-4 py-3.5 leading-normal text-[oklch(0.88_0.01_275)]"
+      >
+        {sent}
+      </p>
+    );
   }
   return (
-    <form action={formAction} className="grid gap-4">
+    <form action={formAction} className="grid gap-3.5">
       <Field
         name="email"
         label="Email"
         type="email"
         autoComplete="email"
+        placeholder="you@example.com"
         required
         defaultValue={state.values?.email}
         error={state.fieldErrors?.email}
       />
       <FormMessage message={state.message} />
-      <Button type="submit" disabled={pending}>
+      <Button
+        type="submit"
+        variant={outlined ? "outline" : "default"}
+        size="lg"
+        className="w-full"
+        disabled={pending}
+      >
         {submit}
       </Button>
     </form>
@@ -114,6 +134,7 @@ export function ResendVerificationForm() {
       action={resendVerification}
       submit="Send a new link"
       sent="If that address needs verifying, we've sent it a new link."
+      outlined
     />
   );
 }

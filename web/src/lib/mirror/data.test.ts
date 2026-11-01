@@ -37,7 +37,15 @@ describe("mirror data", () => {
       }),
     );
     const got = await listRepos("/repos");
-    expect(got).toEqual({ data: { repositories: [repo], syncing: false } });
+    // An API without the schedule fields still parses, with them as null
+    expect(got).toEqual({
+      data: {
+        repositories: [repo],
+        syncing: false,
+        last_run_at: null,
+        next_run_at: null,
+      },
+    });
     expect(auth).toBe("Bearer tok");
   });
 

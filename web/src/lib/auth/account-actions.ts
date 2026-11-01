@@ -74,6 +74,11 @@ export async function changePassword(
   if (!parsed.success) {
     return { fieldErrors: fieldErrors(parsed.error) };
   }
+  // cyberlab-mirror: the form asks for the new password twice
+  const repeat = formData.get("repeat_password");
+  if (repeat !== null && repeat !== parsed.data.new_password) {
+    return { fieldErrors: { repeat_password: "The passwords don't match." } };
+  }
   const out = await asUser("/account", (token) =>
     callApiNoContent("/v1/users/me/password", {
       method: "POST",

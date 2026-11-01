@@ -1,6 +1,7 @@
 "use client";
 
 // From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// cyberlab-mirror: restyled.
 import { useActionState, type ReactNode } from "react";
 
 import { FormMessage } from "@/components/auth/field";
@@ -30,11 +31,16 @@ export function TokenForm({ action, submit, children }: TokenFormProps) {
     return <FormMessage message={INCOMPLETE_LINK} />;
   }
   return (
-    <form action={formAction} className="grid gap-4">
+    <form action={formAction} className="grid gap-3.5">
       <input type="hidden" name="token" value={token ?? ""} />
       {children?.(state)}
       <FormMessage message={state.message} />
-      <Button type="submit" disabled={pending || token === undefined}>
+      <Button
+        type="submit"
+        size="lg"
+        className="mt-1 w-full"
+        disabled={pending || token === undefined}
+      >
         {submit}
       </Button>
     </form>

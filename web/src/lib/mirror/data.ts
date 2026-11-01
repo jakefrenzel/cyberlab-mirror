@@ -9,6 +9,7 @@ import { TWO_FACTOR_SETUP_PATH, getSessionToken } from "@/lib/auth/session";
 import {
   blobSchema,
   commitPageSchema,
+  fileListSchema,
   repoDetailSchema,
   repoListSchema,
   treeSchema,
@@ -17,6 +18,12 @@ import {
 // Repository names as GitHub (and the API) allow them. Anything else can't
 // exist, so it's a 404 without asking the API.
 const REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/;
+
+// isRepoName reports whether name could be a repository's.
+export function isRepoName(name: string): boolean {
+  // "." and ".." match the pattern, and new URL() would resolve them away
+  return REPO_NAME.test(name) && name !== "." && name !== "..";
+}
 
 // Problem is an answer the page shows instead of the data.
 export type Problem =
@@ -72,14 +79,15 @@ export async function load<S extends z.ZodType>(
 // repoPath returns the API path for a repository, or 404s for a name that
 // can't exist.
 export function repoPath(name: string, rest = ""): string {
-  // "." and ".." match the pattern, and new URL() would resolve them away
-  if (!REPO_NAME.test(name) || name === "." || name === "..") {
+  if (!isRepoName(name)) {
     notFound();
   }
   return `/v1/repos/${encodeURIComponent(name)}${rest}`;
 }
 
-function query(params: Record<string, string | number | undefined>): string {
+export function query(
+  params: Record<string, string | number | undefined>,
+): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== "") {
@@ -136,4 +144,8 @@ export async function getCommits(
     repoPath(name, "/commits" + query({ ref, path: file, page })),
     commitPageSchema,
   );
+}
+
+export async function getFiles(path: string, name: string, ref?: string) {
+  return load(path, repoPath(name, "/files" + query({ ref })), fileListSchema);
 }

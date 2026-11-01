@@ -1,16 +1,16 @@
 // From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
-import Link from "next/link";
-
+// cyberlab-mirror: the redesign's account page: a section nav, and 2FA
+// managed in place instead of on its own page.
 import {
-  ChangeEmailForm,
-  ChangePasswordForm,
+  EmailSection,
   EndSessionButton,
   LogOutEverywhereButton,
+  PasswordSection,
+  Section,
 } from "@/components/auth/account-forms";
-import {
-  LinkProviderForm,
-  UnlinkProviderForm,
-} from "@/components/auth/oauth-buttons";
+import { Notice } from "@/components/auth/field";
+import { ProviderRow } from "@/components/auth/oauth-buttons";
+import { TwoFactorSection } from "@/components/auth/two-factor-settings";
 import { callApi } from "@/lib/api/client";
 import {
   oauthAccountsSchema,
@@ -20,6 +20,12 @@ import {
 import { noticeText } from "@/lib/auth/notices";
 import { PROVIDER_NAMES, enabledProviders } from "@/lib/auth/oauth";
 import { getSessionToken, requireSession } from "@/lib/auth/session";
+import {
+  describeUserAgent,
+  formatTime,
+  relativeTime,
+  requestTime,
+} from "@/lib/mirror/format";
 
 export default async function AccountPage({
   searchParams,
@@ -31,85 +37,123 @@ export default async function AccountPage({
     callApi("/v1/users/me/oauth-accounts", oauthAccountsSchema, { token }),
   ]);
   const notice = noticeText((await searchParams).notice);
-  const unlinked = enabledProviders()
-    .filter((p) => !linked.some((a) => a.provider === p))
-    .map((id) => ({ id, name: PROVIDER_NAMES[id] }));
+  // Every enabled provider, and any linked one that's since been turned off
+  const providerIds = [
+    ...new Set<string>([
+      ...enabledProviders(),
+      ...linked.map((a) => a.provider),
+    ]),
+  ];
+  const now = requestTime();
+
+  const nav = [
+    ["Email", "#email"],
+    ["Password", "#password"],
+    ["Two-factor", "#two-factor"],
+    ...(providerIds.length > 0 ? [["Sign-in providers", "#providers"]] : []),
+    ["Sessions", "#sessions"],
+  ];
+
   return (
-    <>
-      <h1 className="text-2xl font-semibold">Account</h1>
-      {notice && <p role="status">{notice}</p>}
+    <main className="grid items-start gap-4 px-4 pt-2 pb-10 md:grid-cols-[220px_minmax(0,760px)] md:gap-8 md:px-6 md:pt-4 md:pb-14">
+      <nav
+        aria-label="Account"
+        className="flex flex-wrap gap-0.5 md:sticky md:top-[84px] md:grid"
+      >
+        <h1 className="mb-3.5 ml-3.5 basis-full text-[28px] font-medium">
+          Account
+        </h1>
+        {nav.map(([label, to]) => (
+          <a
+            key={to}
+            href={to}
+            className="hover:bg-container flex h-10 items-center rounded-full px-3.5 text-[oklch(0.84_0.01_275)] hover:text-[oklch(0.94_0.01_275)]"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
 
-      <section className="grid gap-4">
-        <h2 className="text-lg font-semibold">Email</h2>
-        <p>{session.email}</p>
-        <ChangeEmailForm />
-      </section>
+      <div className="grid gap-4 md:pt-[52px]">
+        {notice && <Notice>{notice}</Notice>}
+        <EmailSection email={session.email} />
+        <PasswordSection />
+        <TwoFactorSection
+          enabled={session.two_factor_enabled}
+          required={session.two_factor_required}
+        />
 
-      <section className="grid gap-4">
-        <h2 className="text-lg font-semibold">Password</h2>
-        <ChangePasswordForm />
-      </section>
-
-      <section className="grid gap-4">
-        <h2 className="text-lg font-semibold">Two-factor authentication</h2>
-        <p>
-          {session.two_factor_enabled ? "On." : "Off."}{" "}
-          <Link href="/account/two-factor" className="underline">
-            Manage
-          </Link>
-        </p>
-      </section>
-
-      {(linked.length > 0 || unlinked.length > 0) && (
-        <section className="grid gap-4">
-          <h2 className="text-lg font-semibold">Sign-in providers</h2>
-          <ul className="grid gap-4">
-            {linked.map((a) => {
+        {providerIds.length > 0 && (
+          <Section
+            id="providers"
+            title={
+              <h2 className="mb-1 text-lg font-semibold">Sign-in providers</h2>
+            }
+          >
+            {providerIds.map((id) => {
+              const account = linked.find((a) => a.provider === id);
               const name =
-                PROVIDER_NAMES[a.provider as keyof typeof PROVIDER_NAMES] ??
-                a.provider;
+                PROVIDER_NAMES[id as keyof typeof PROVIDER_NAMES] ?? id;
               return (
-                <li key={a.id} className="grid gap-2 text-sm">
-                  <p>
-                    {name}
-                    {a.email && ` (${a.email})`}
-                  </p>
-                  <UnlinkProviderForm id={a.id} name={name} />
-                </li>
+                <ProviderRow
+                  key={id}
+                  provider={{ id, name }}
+                  linked={
+                    account ? { id: account.id, email: account.email } : null
+                  }
+                />
               );
             })}
-          </ul>
-          <LinkProviderForm providers={unlinked} />
-        </section>
-      )}
+          </Section>
+        )}
 
-      <section className="grid gap-4">
-        <h2 className="text-lg font-semibold">Where you&apos;re logged in</h2>
-        <ul className="grid gap-4">
-          {sessions.map((s) => (
-            <SessionRow key={s.id} session={s} />
-          ))}
-        </ul>
-        <LogOutEverywhereButton />
-      </section>
-    </>
+        <Section
+          id="sessions"
+          title={
+            <h2 className="mb-1 text-lg font-semibold">
+              Where you&apos;re logged in
+            </h2>
+          }
+        >
+          <ul className="grid gap-3">
+            {sessions.map((s) => (
+              <SessionRow key={s.id} session={s} now={now} />
+            ))}
+          </ul>
+          <LogOutEverywhereButton />
+        </Section>
+      </div>
+    </main>
   );
 }
 
-function SessionRow({ session: s }: { session: SessionInfo }) {
+function SessionRow({
+  session: s,
+  now,
+}: {
+  session: SessionInfo;
+  now: number;
+}) {
   return (
-    <li className="flex items-start justify-between gap-4 text-sm">
-      <div className="min-w-0">
-        <p className="truncate font-medium" title={s.user_agent ?? undefined}>
-          {s.user_agent ?? "Unknown device"}
-        </p>
-        <p className="text-neutral-500">
+    <li className="bg-container-high flex items-center gap-3.5 rounded-2xl px-3.5 py-3">
+      <div className="grid min-w-0 flex-1 gap-0.5">
+        <span
+          className="truncate font-semibold"
+          title={s.user_agent ?? undefined}
+        >
+          {describeUserAgent(s.user_agent)}
+        </span>
+        <span className="text-muted text-[13px]">
           {s.ip ?? "Unknown address"} · last used{" "}
-          {new Date(s.last_used_at).toUTCString()}
-        </p>
+          <span title={formatTime(s.last_used_at)}>
+            {relativeTime(s.last_used_at, now)}
+          </span>
+        </span>
       </div>
       {s.is_current ? (
-        <span className="shrink-0">This device</span>
+        <span className="bg-ok-bg text-ok shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold">
+          This device
+        </span>
       ) : (
         <EndSessionButton id={s.id} />
       )}
