@@ -103,9 +103,13 @@ jobs:
           # Metrics aren't on the API port, and the mirror needs a session
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/metrics)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/v1/repos)" = 401
-          # A stranger's sign-up gets the module's normal answer, and creates nothing
+          # A stranger's sign-up gets the module's normal answer, and creates
+          # nothing. A random password: the module checks it against Have I
+          # Been Pwned before the allowlist hook runs, and a well-known one
+          # would get 422 breached
+          password="$(openssl rand -hex 16)"
           test "$(curl -s -X POST -H 'Content-Type: application/json' \
-            -d '{"email":"stranger@example.com","password":"correct horse battery staple","client":"web"}' \
+            -d '{"email":"stranger@example.com","password":"'"$password"'","client":"web"}' \
             http://localhost:8080/v1/users)" = '{"verification_required":true}'
           test "$(docker exec db psql -U mirror -d mirror -Atc 'select count(*) from auth.users')" = 0
 
