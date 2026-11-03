@@ -91,7 +91,8 @@ func TestWithTheRealAuthModule(t *testing.T) {
 	}
 	const password = "correct horse battery staple"
 
-	// A stranger gets the same answer as a real sign-up, and nothing happens
+	// A stranger gets the same answer as a real sign-up, and nothing happens:
+	// the hook's auth.ErrSignUpNotAllowed rolls it back without an email
 	stranger := call(h, "POST", "/v1/users", "", `{"email":"stranger@example.com","password":"`+password+`","client":"web"}`)
 	allowedSignUp := call(h, "POST", "/v1/users", "", `{"email":"me@example.com","password":"`+password+`","client":"web"}`)
 	if stranger.Code != http.StatusAccepted || allowedSignUp.Code != http.StatusAccepted || stranger.Body.String() != allowedSignUp.Body.String() {
@@ -100,16 +101,6 @@ func TestWithTheRealAuthModule(t *testing.T) {
 	var count int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM auth.users`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("users = %d (%v), want only the allowed one", count, err)
-	}
-
-	// Without the gate, the module's hook still refuses the stranger
-	direct := http.NewServeMux()
-	a.Register(direct)
-	if rec := call(direct, "POST", "/v1/users", "", `{"email":"other@example.com","password":"`+password+`","client":"web"}`); rec.Code != http.StatusInternalServerError {
-		t.Errorf("hook didn't refuse: %d %s", rec.Code, rec.Body)
-	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM auth.users`).Scan(&count); err != nil || count != 1 {
-		t.Errorf("users = %d after the hook refused, want 1", count)
 	}
 
 	// Verify from the emailed link, which logs in

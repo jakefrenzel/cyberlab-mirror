@@ -13,7 +13,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/mail"
 	"regexp"
 	"strconv"
 	"strings"
@@ -68,9 +67,6 @@ const maxFiles = 10000
 // maxSyncBody bounds POST /v1/syncs, whose body is at most a repository name.
 const maxSyncBody = 1 << 10
 
-// maxSignUpBody matches the auth module's own request size limit.
-const maxSignUpBody = 64 << 10
-
 var validRepoName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
 type server struct {
@@ -112,7 +108,7 @@ func New(opts Options) http.Handler {
 	mux.Handle("GET /v1/repos/{name}/files", member(s.files))
 	mux.Handle("POST /v1/syncs", member(s.startSync))
 
-	return securityHeaders(withRequestID(s.signUpGate(opts.Guard.Protect(mux))))
+	return securityHeaders(withRequestID(opts.Guard.Protect(mux)))
 }
 
 // Ops returns the handler for health checks and metrics, served on its own
@@ -160,50 +156,11 @@ func withRequestID(next http.Handler) http.Handler {
 	})
 }
 
-// signUpGate answers sign-ups for addresses that aren't on the allowlist
-// exactly as the auth module answers a real one (202, "check your email"),
-// without creating anything. The module's OnUserCreated hook also refuses
-// them, but a refusal there becomes a 500, which would tell anyone which
-// addresses are allowed. Malformed requests go through, so the module's own
-// validation errors are unchanged.
-func (s *server) signUpGate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/users" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSignUpBody))
-		if err != nil {
-			writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "The request is too large.")
-			return
-		}
-		r.Body = io.NopCloser(bytes.NewReader(body))
-
-		var req struct {
-			Email string `json:"email"`
-		}
-		if json.Unmarshal(body, &req) != nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		email := strings.TrimSpace(req.Email)
-		if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if s.allowed[strings.ToLower(email)] {
-			next.ServeHTTP(w, r)
-			return
-		}
-		s.log.InfoContext(r.Context(), "sign-up refused: address not on the allowlist",
-			slog.String("request_id", w.Header().Get("X-Request-ID")))
-		writeJSON(w, http.StatusAccepted, map[string]bool{"verification_required": true})
-	})
-}
-
 // AllowUser is the auth module's OnUserCreated check: it refuses accounts
 // for addresses that aren't allowed, for every way of signing up (password
-// and GitHub). It returns an error for anything not on the list.
+// and GitHub). A refusal is auth.ErrSignUpNotAllowed, which the module
+// answers like an accepted sign-up (202, no email sent) for a password
+// sign-up, so the endpoint doesn't reveal which addresses are allowed.
 func AllowUser(allowed []string) func(email string) error {
 	set := map[string]bool{}
 	for _, e := range allowed {
@@ -211,7 +168,7 @@ func AllowUser(allowed []string) func(email string) error {
 	}
 	return func(email string) error {
 		if !set[strings.ToLower(strings.TrimSpace(email))] {
-			return errors.New("sign-up refused: address not on the allowlist")
+			return auth.ErrSignUpNotAllowed
 		}
 		return nil
 	}

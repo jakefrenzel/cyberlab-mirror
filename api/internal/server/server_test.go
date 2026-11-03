@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/atlasopsec/auth"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,20 +28,11 @@ type guarded struct{ http.Handler }
 // fakeGuard stands in for *auth.Auth: "Authorization: Bearer <email>" is a
 // valid session for that address, and Protect refuses unguarded routes as
 // the module does.
-type fakeGuard struct {
-	signUps  atomic.Int32
-	lastBody atomic.Value
-}
+type fakeGuard struct{}
 
-func (g *fakeGuard) Register(mux *http.ServeMux) {
-	mux.Handle("POST /v1/users", g.Public(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		g.signUps.Add(1)
-		b, _ := io.ReadAll(r.Body)
-		g.lastBody.Store(string(b))
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = io.WriteString(w, `{"verification_required":true}`)
-	})))
-}
+// Register adds none of the module's endpoints; the mirror's tests don't
+// need them.
+func (g *fakeGuard) Register(*http.ServeMux) {}
 
 func (g *fakeGuard) Authenticated(h http.Handler) http.Handler {
 	return guarded{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -398,47 +390,13 @@ func TestFileList(t *testing.T) {
 	}
 }
 
-func TestSignUpGate(t *testing.T) {
-	h := newHarness(t)
-
-	rec := h.do("POST", "/v1/users", "", `{"email":"stranger@example.com","password":"long enough password","client":"web"}`)
-	if rec.Code != http.StatusAccepted || rec.Body.String() != "{\"verification_required\":true}\n" {
-		t.Errorf("stranger: %d %q (want the module's exact 202)", rec.Code, rec.Body)
-	}
-	if h.guard.signUps.Load() != 0 {
-		t.Error("a stranger's sign-up reached the auth module")
-	}
-
-	body := `{"email":" Me@Example.com ","password":"long enough password","client":"web"}`
-	if rec := h.do("POST", "/v1/users", "", body); rec.Code != http.StatusAccepted || h.guard.signUps.Load() != 1 {
-		t.Fatalf("allowlisted: %d, module calls %d", rec.Code, h.guard.signUps.Load())
-	}
-	if got := h.guard.lastBody.Load(); got != body {
-		t.Errorf("body changed on the way through: %q", got)
-	}
-
-	// Malformed requests go to the module, for its own validation errors
-	for _, b := range []string{`not json`, `{"email":"not-an-email"}`, `{"email":""}`, `{"email":"Me <x@example.com>"}`} {
-		before := h.guard.signUps.Load()
-		h.do("POST", "/v1/users", "", b)
-		if h.guard.signUps.Load() != before+1 {
-			t.Errorf("%s didn't reach the module", b)
-		}
-	}
-
-	rec = h.do("POST", "/v1/users", "", `{"email":"`+strings.Repeat("a", maxSignUpBody)+`@example.com"}`)
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("oversized: %d", rec.Code)
-	}
-}
-
 func TestAllowUser(t *testing.T) {
 	check := AllowUser([]string{"me@example.com"})
 	if err := check("  ME@example.COM "); err != nil {
 		t.Errorf("allowed address refused: %v", err)
 	}
-	if err := check("other@example.com"); err == nil {
-		t.Error("other address allowed")
+	if err := check("other@example.com"); !errors.Is(err, auth.ErrSignUpNotAllowed) {
+		t.Errorf("other address: %v, want auth.ErrSignUpNotAllowed", err)
 	}
 }
 

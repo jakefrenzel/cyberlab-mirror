@@ -31,11 +31,10 @@ Mirroring uses [go-git](https://github.com/go-git/go-git), a pure-Go git impleme
 
 ## Sign-in and the allowlist
 
-Accounts, sessions, email verification, 2FA, rate limits, and "Sign in with GitHub" all come from `atlasopsec/auth`. The mirror adds an allowlist (`ALLOWED_EMAILS`), enforced three times:
+Accounts, sessions, email verification, 2FA, rate limits, and "Sign in with GitHub" all come from `atlasopsec/auth`. The mirror adds an allowlist (`ALLOWED_EMAILS`), enforced twice:
 
-1. **Sign-up gate.** A sign-up for an address that isn't on the list gets exactly the module's normal answer (`202 {"verification_required": true}`), and nothing is created. Without the gate, the module's hook would refuse it with a `500`, which tells anyone which addresses are allowed.
-2. **`OnUserCreated` hook.** The module refuses to create any account that isn't on the list, so signing up with GitHub is covered too.
-3. **Every request.** Mirror routes check the signed-in user's address against the list, so removing someone locks them out at once, even with a live session.
+1. **`OnUserCreated` hook.** The module refuses to create any account that isn't on the list, for every way of signing up, GitHub included. The hook returns `auth.ErrSignUpNotAllowed` (module `v1.1.0`+), so a refused password sign-up gets exactly the answer an accepted one gets (`202 {"verification_required": true}`), with no email sent and nothing created, and nobody can use sign-up to learn which addresses are allowed. A refused GitHub sign-up gets `403 sign_up_not_allowed`, which reveals nothing, since GitHub already proved the person owns the address.
+2. **Every request.** Mirror routes check the signed-in user's address against the list, so removing someone locks them out at once, even with a live session.
 
 Every route goes through the module's `Protect`, which refuses any route without an access rule.
 

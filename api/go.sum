@@ -13,8 +13,8 @@ github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be h1:9AeTilPcZAjCFI
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be/go.mod h1:ySMOLuWl6zY27l47sB3qLNK6tF2fkHG55UZxx8oIVo4=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPdPJAN/hZIm0C4OItdklCFmMRWYpio=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5/go.mod h1:wHh0iHkYZB8zMSxRWpUBQtwG5a7fFgvEO+odwuTv2gs=
-github.com/atlasopsec/auth v1.0.1 h1:jDVPh6rfhrL8OZ/MFOPQtsE+RLXukND5VPCAyiINmBs=
-github.com/atlasopsec/auth v1.0.1/go.mod h1:kTDIy1AfmPk2onywG7Sj45ti7Y0Z7GYq7BfdN3Rplm8=
+github.com/atlasopsec/auth v1.2.0 h1:DRUdtskzRTqfpMgV+S+mCfLjyPUje6DE0YdhDtThacE=
+github.com/atlasopsec/auth v1.2.0/go.mod h1:LueTa8k3tKcqtwVUJgFxjn/KorPAp8VYSxVZc0Z83eM=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=

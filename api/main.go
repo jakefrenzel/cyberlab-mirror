@@ -77,8 +77,8 @@ func run(ctx context.Context, log *slog.Logger) error {
 		DisableOrganizationCreation: true,
 		OAuth:                       oauth,
 		Hooks: auth.Hooks{
-			// The second line of the allowlist, after the server's sign-up
-			// gate: also covers signing up with GitHub
+			// The allowlist, for every way of signing up (password and
+			// GitHub)
 			OnUserCreated: func(_ context.Context, _ pgx.Tx, u auth.User) error {
 				return allow(u.Email)
 			},
