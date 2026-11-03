@@ -1,4 +1,4 @@
-// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.3.0.
 import "server-only";
 
 import { z } from "zod";
@@ -7,13 +7,15 @@ const envSchema = z.object({
   // The Go API's private address, e.g. http://api.railway.internal:8080.
   API_URL: z.url(),
   // The header the hosting edge puts the browser's IP in. Railway's edge
-  // sets X-Real-IP. cyberlab-mirror: "none" forwards no IP at all, for when
-  // there's no edge to set it (kubectl port-forward).
+  // sets X-Real-IP. "none" forwards no IP: use it when nothing in front of
+  // the web app overwrites the header, since the browser could then send
+  // any IP it likes. null means none.
   CLIENT_IP_HEADER: z
     .string()
     .regex(/^[A-Za-z0-9-]+$/)
     .default("x-real-ip")
-    .transform((h) => h.toLowerCase()),
+    .transform((h) => h.toLowerCase())
+    .transform((h) => (h === "none" ? null : h)),
   // The sign-in providers turned on in the Go API's Config.OAuth, e.g.
   // "google,github". Their buttons appear on the login and account pages.
   OAUTH_PROVIDERS: z

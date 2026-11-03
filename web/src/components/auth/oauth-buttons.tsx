@@ -1,6 +1,6 @@
 "use client";
 
-// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.3.0.
 // cyberlab-mirror: restyled; linking and unlinking are one row per provider
 // on the account page, asking for the password when confirming.
 import { useActionState, useState } from "react";

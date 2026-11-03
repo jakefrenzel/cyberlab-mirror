@@ -9,8 +9,8 @@ export default defineConfig({
     tsconfigPaths: true,
     alias: {
       // "server-only" throws outside Next.js's server bundles.
-      // fileURLToPath, not URL.pathname: the pathname keeps a leading slash and
-      // %20s on Windows, so the alias pointed nowhere there.
+      // fileURLToPath, not URL.pathname: pathname keeps spaces as %20 and
+      // gives /C:/... on Windows, so the alias would point nowhere.
       "server-only": fileURLToPath(
         new URL("./src/test/empty.ts", import.meta.url),
       ),

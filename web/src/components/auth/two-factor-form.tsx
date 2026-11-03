@@ -1,6 +1,6 @@
 "use client";
 
-// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.3.0.
 // cyberlab-mirror: restyled, with a switch between an authenticator code and
 // a recovery code. The API accepts either in the same field.
 import { useActionState, useState } from "react";

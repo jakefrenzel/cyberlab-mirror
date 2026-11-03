@@ -2,7 +2,7 @@
 
 The front end of [cyberlab-mirror](../README.md): a Next.js 16 app that signs in through the [`atlasopsec/auth`](https://github.com/atlasopsec/auth) module and browses the mirror read-only.
 
-It starts from the auth module's Next.js template (`templates/nextjs`, **version 0.1.0**, for auth `v1.0.0`, as shipped in its `v1.0.1` tag). Files copied from it begin with a comment saying so, and the changes below are marked `cyberlab-mirror:` in the code.
+It starts from the auth module's Next.js template (`templates/nextjs`, **version 0.3.0**, as shipped in auth's `v1.2.0` tag; the API runs auth `v1.2.0`). Files copied from it begin with a comment saying so, and the changes below are marked `cyberlab-mirror:` in the code.
 
 ## Pages
 
@@ -27,14 +27,12 @@ Every page under `/repos` and `/account` calls `requireSession`, which checks th
 - **Content Security Policy with a nonce per response** ([`src/proxy.ts`](src/proxy.ts)). Scripts run only with that response's nonce, and `'strict-dynamic'` lets those load the rest of Next.js. The policy also sets `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` (plus GitHub's sign-in page when GitHub sign-in is on), and `frame-ancestors 'none'`.
 - **Every page renders per request.** Cache Components and partial prerendering are off, because both serve a static shell built ahead of time, and its scripts can't carry a per-request nonce. CI checks that every script on the auth pages carries the response's nonce.
 - **Other headers:** `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, cross-origin opener and resource policies, a restrictive `Permissions-Policy`, and no `X-Powered-By`.
-- **The session cookie** is the template's `__Host-session`: `HttpOnly`, `Secure`, `SameSite=Lax`. Browsers treat `localhost` as secure, so it works through `kubectl port-forward`.
+- **Cookies** are the template's `__Host-session` and `__Host-device`: `HttpOnly`, `Secure`, `SameSite=Lax`. Browsers treat `localhost` as secure, so they work through `kubectl port-forward`. `__Host-device` keeps the device token from the last password login for a year and sends it with the next login, so other people's wrong passwords for the same email don't make this browser wait.
 
 ## Changes from the template
 
-- **`CLIENT_IP_HEADER=none`.** The template forwards the browser's IP from a header its hosting edge sets. Behind `kubectl port-forward` there is no edge, so the header would be whatever the browser claims. `none` forwards no IP, and the API records the web pod as the client.
 - **No mobile OAuth callback, no Playwright end-to-end tests.** There's no mobile app. The template's e2e tests start the auth module's example API, which isn't in this repository.
 - **`/repos` instead of `/dashboard`** after login.
-- **`vitest.config.mts`** builds the `server-only` alias path with `fileURLToPath`. The template's `URL.pathname` breaks on Windows paths with spaces.
 - **Docker:** `output: "standalone"` on a distroless Node.js 24 image, with `sharp` (37 MB of native image libraries, unused here) left out.
 
 ## Settings
@@ -47,7 +45,7 @@ Every page under `/repos` and `/account` calls `requireSession`, which checks th
 
 ## Development
 
-Node.js 24 (`.node-version`). The test tools need zstd in `zlib`, which Node 22 only has from 22.15.
+Node.js 24 (`.node-version`); `engines` allows `^22.22.2 || ^24.15.0 || >=26.0.0`, the versions the test tools (jsdom) work on.
 
 ```bash
 pnpm install

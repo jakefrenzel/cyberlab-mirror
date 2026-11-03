@@ -1,4 +1,4 @@
-// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.3.0.
 // cyberlab-mirror: the redesign's account page: a section nav, and 2FA
 // managed in place instead of on its own page.
 import {

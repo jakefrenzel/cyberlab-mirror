@@ -49,10 +49,7 @@ describe("callApi", () => {
     expect(seen?.headers.has("authorization")).toBe(false);
   });
 
-  it("forwards no IP when CLIENT_IP_HEADER is none", async () => {
-    vi.stubEnv("CLIENT_IP_HEADER", "none");
-    vi.resetModules();
-    const fresh = await import("@/lib/api/client");
+  it("forwards no IP with CLIENT_IP_HEADER=none, but still the user agent", async () => {
     let seen: Request | undefined;
     apiServer.use(
       http.get(`${API}/v1/things`, ({ request }) => {
@@ -60,15 +57,24 @@ describe("callApi", () => {
         return HttpResponse.json({});
       }),
     );
-    // A browser claiming an address must not be believed
-    fakeRequest.headers.set("x-real-ip", "203.0.113.7");
+    // With no edge that overwrites the header, it's whatever the browser
+    // sent.
+    fakeRequest.headers.set("x-real-ip", "198.51.100.1");
+    // "none" is a setting, not the name of a header to read.
+    fakeRequest.headers.set("none", "198.51.100.2");
     fakeRequest.headers.set("user-agent", "Firefox/140");
-
-    await fresh.callApi("/v1/things", z.object({}));
+    vi.resetModules();
+    vi.stubEnv("CLIENT_IP_HEADER", "none");
+    try {
+      const client = await import("@/lib/api/client");
+      await client.callApi("/v1/things", z.object({}));
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
 
     expect(seen?.headers.has("x-forwarded-for")).toBe(false);
     expect(seen?.headers.get("x-forwarded-user-agent")).toBe("Firefox/140");
-    vi.unstubAllEnvs();
   });
 
   it("throws the API's error, with its fields and Retry-After", async () => {

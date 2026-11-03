@@ -1,4 +1,4 @@
-// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.3.0.
 // cyberlab-mirror: 2FA is managed on /account now. This page stays for users
 // who must set it up before they can do anything else.
 import { redirect } from "next/navigation";

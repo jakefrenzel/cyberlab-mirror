@@ -1,4 +1,4 @@
-// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.1.0.
+// From the auth module's Next.js template (github.com/atlasopsec/auth, templates/nextjs), version 0.3.0.
 // cyberlab-mirror: runs on every page, to set the Content Security Policy;
 // the logged-out redirect still applies only to the protected areas.
 import { NextResponse, type NextRequest } from "next/server";

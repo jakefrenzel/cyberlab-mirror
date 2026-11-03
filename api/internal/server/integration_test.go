@@ -153,4 +153,22 @@ func TestWithTheRealAuthModule(t *testing.T) {
 	if rec := call(h, "GET", "/v1/repos", login.Token, ""); rec.Code != http.StatusUnauthorized {
 		t.Errorf("after logout: %d", rec.Code)
 	}
+
+	// A login with the password returns a device token (module v1.2.0+),
+	// which the web app keeps in __Host-device and sends with the next login
+	var device struct {
+		Token       string  `json:"token"`
+		DeviceToken *string `json:"device_token"`
+	}
+	rec = call(h, "POST", "/v1/sessions", "", `{"email":"me@example.com","password":"`+password+`","client":"web"}`)
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &device) != nil || device.DeviceToken == nil || *device.DeviceToken == "" {
+		t.Fatalf("password login: %d %s, want a device_token", rec.Code, rec.Body)
+	}
+	again, err := json.Marshal(map[string]string{"email": "me@example.com", "password": password, "client": "web", "device_token": *device.DeviceToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := call(h, "POST", "/v1/sessions", "", string(again)); rec.Code != http.StatusCreated {
+		t.Errorf("login with the device token: %d %s", rec.Code, rec.Body)
+	}
 }
