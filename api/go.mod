@@ -3,10 +3,10 @@ module github.com/jakefrenzel/cyberlab-mirror/api
 go 1.27.3
 
 require (
-	github.com/atlasopsec/auth v1.2.0
+	github.com/atlasopsec/auth v1.4.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
