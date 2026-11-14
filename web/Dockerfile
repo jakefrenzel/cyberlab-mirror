@@ -19,7 +19,7 @@ RUN pnpm build
 
 # Runtime stage: distroless Node.js 24 has no shell, package manager, or libc
 # tools. Just node, CA certificates, and a nonroot user (UID 65532).
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:b8cec4b2f2126ff7bd034ec9ac207ffb3272667dfdc48376e3b035d3270549ba
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb367ebc291572c774c1592a986be2ab26a2486f73093401327495a5962a
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
