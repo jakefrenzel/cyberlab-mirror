@@ -1,7 +1,7 @@
 # Build stage: Node.js and pnpm, discarded after the build.
 # Images are pinned by digest as well as tag, so a re-pushed tag can't change what
 # gets built. Dependabot proposes updates to both.
-FROM node:24.22.2-trixie@sha256:8c761eca2bf7eec965f946cf47b8090143cb41f45f2f8699af0cc0298d2d2d19 AS build
+FROM node:26.13.1-trixie@sha256:e18c3ccdf7d71619990b0e85639f506e2028a95410999cab24cc373cbd10e0ac AS build
 
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /src
